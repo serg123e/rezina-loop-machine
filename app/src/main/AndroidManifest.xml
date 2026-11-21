@@ -1,6 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- screenOrientation="portrait" implies a required portrait screen, which Play reads as
+         "not for tablets/desktops"; the app works on any screen, so make it optional. -->
+    <uses-feature android:name="android.hardware.screen.portrait" android:required="false" />
+
     <application
         android:icon="@mipmap/ic_launcher"
         android:label="Rezina"
