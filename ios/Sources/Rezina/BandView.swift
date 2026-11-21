@@ -83,6 +83,11 @@ final class BandView: UIView {
 
     // MARK: layout
 
+    override func safeAreaInsetsDidChange() {
+        super.safeAreaInsetsDidChange()
+        setNeedsLayout()
+    }
+
     override func layoutSubviews() {
         super.layoutSubviews()
         let w = bounds.width

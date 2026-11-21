@@ -131,7 +131,7 @@ final class Engine {
         let blocks = Int(Engine.maxSeconds * Float(Engine.sampleRate) / Float(Engine.block))
         maxBlocks = blocks
         tracks = Engine.defaultModes.map { Track(mode: $0, capacity: blocks * Frame.size) }
-        stageFrames = .allocate(capacity: Engine.defaultModes.count * max * Frame.size)
+        stageFrames = .allocate(capacity: Engine.defaultModes.count * blocks * Frame.size)
         let sr = Float(Engine.sampleRate)
         liveVoice = Voice(sampleRate: sr)
         voices = tracks.map { _ in Voice(sampleRate: sr) }
