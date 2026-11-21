@@ -1,0 +1,108 @@
+#!/usr/bin/env python3
+"""Google Play for Rezina over the Play Developer API (tools/play_api.py, the service account).
+
+    tools/play listing [pull]      texts of the store listing ⇄ store/listing-<lang>.json
+    tools/play images              icon, feature graphic, phone screenshots from store/ (each set replaced)
+    tools/play release TRACK [--draft]
+                                   the AAB (tools/aab) into internal | alpha (closed) | beta | production,
+                                   notes from store/notes-<lang>.txt; --draft while the app was never
+                                   published (Play allows only draft releases then)
+    tools/play status              what each track holds
+
+Each command is one edit, committed at the end; Google reviews listing changes, usually within hours.
+The app itself is created in Play Console by hand (the API cannot) — see docs/play.md.
+"""
+import json, sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from play_api import api, upload
+
+P = "/applications/it.automate123.rezina"
+ROOT = Path(__file__).resolve().parent.parent
+STORE = ROOT / "store"
+AAB = ROOT / "app/build/outputs/bundle/release/app-release.aab"
+FIELDS = ("title", "shortDescription", "fullDescription")
+LIMITS = {"title": 30, "shortDescription": 80, "fullDescription": 4000}
+
+
+def langs():
+    return sorted(f.stem.removeprefix("listing-") for f in STORE.glob("listing-*.json"))
+
+
+def edit(work):
+    """Runs `work(edit_path)` in one edit: committed if it returns, thrown away if it fails."""
+    e = api("POST", P + "/edits", {})["id"]
+    try:
+        work(f"{P}/edits/{e}")
+        api("POST", f"{P}/edits/{e}:commit")
+        print("committed")
+    except BaseException:
+        api("DELETE", f"{P}/edits/{e}")
+        raise
+
+
+def listing(path):
+    if sys.argv[2:3] == ["pull"]:
+        for l in api("GET", path + "/listings").get("listings", []):
+            (STORE / f"listing-{l['language']}.json").write_text(
+                json.dumps({k: l[k] for k in FIELDS}, ensure_ascii=False, indent=1) + "\n")
+            print("pulled", l["language"])
+        return
+    for lang in langs():
+        l = json.loads((STORE / f"listing-{lang}.json").read_text())
+        for k, n in LIMITS.items():
+            if len(l[k]) > n:
+                sys.exit(f"{lang} {k}: {len(l[k])} > {n}")
+        api("PUT", f"{path}/listings/{lang}", {"language": lang, **l})
+        print("listing", lang)
+
+
+def images(path):
+    for lang in langs():
+        sets = {
+            "icon": [STORE / "icon-512.png"],
+            "featureGraphic": [STORE / f"feature-{lang}.png"],
+            "phoneScreenshots": sorted((STORE / "screens" / lang).glob("*.png")),
+        }
+        for kind, files in sets.items():
+            files = [f for f in files if f.exists()]
+            if not files:
+                print("no", kind, "for", lang)
+                continue
+            api("DELETE", f"{path}/listings/{lang}/{kind}")
+            for f in files:
+                upload(f"{path}/listings/{lang}/{kind}", f, "image/png")
+            print(kind, lang, len(files))
+
+
+def release(path):
+    track = sys.argv[2] if len(sys.argv) > 2 else sys.exit(__doc__)
+    if not AAB.exists():
+        sys.exit(f"no {AAB.relative_to(ROOT)}: make aab")
+    code = upload(path + "/bundles", AAB)["versionCode"]
+    notes = [{"language": f.stem.removeprefix("notes-"), "text": f.read_text().strip()}
+             for f in sorted(STORE.glob("notes-*.txt"))]
+    status = "draft" if "--draft" in sys.argv else "completed"
+    api("PUT", f"{path}/tracks/{track}",
+        {"track": track, "releases": [{"versionCodes": [str(code)], "status": status, "releaseNotes": notes}]})
+    print(f"versionCode {code} → {track} ({status})")
+
+
+def status(path):
+    for t in api("GET", path + "/tracks").get("tracks", []):
+        for r in t.get("releases", []):
+            print(t["track"], r.get("status"), r.get("versionCodes"), r.get("name", ""))
+
+
+
+commands = {"listing": listing, "images": images, "release": release, "status": status}
+cmd = commands.get(sys.argv[1] if len(sys.argv) > 1 else "") or sys.exit(__doc__)
+if cmd is status: # read only: the edit is thrown away
+    e = api("POST", P + "/edits", {})["id"]
+    try:
+        cmd(f"{P}/edits/{e}")
+    finally:
+        api("DELETE", f"{P}/edits/{e}")
+else:
+    edit(cmd)

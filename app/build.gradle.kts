@@ -11,8 +11,8 @@ android {
         applicationId = "it.automate123.rezina"
         minSdk = 26 // AudioTrack low-latency performance mode
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1"
+        versionCode = 2
+        versionName = "0.2"
     }
 
     // Release key comes from the environment (CI secrets); without it only debug builds work.

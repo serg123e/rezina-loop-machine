@@ -34,6 +34,22 @@ git tag v0.2 && git push origin v0.2
 - **If the key is lost, users cannot update the app over an installed copy.** Keep a backup.
 - For a local release build, set the `REZINA_KEYSTORE` and `REZINA_KEYSTORE_PASSWORD` environment variables. Without them, `assembleRelease` produces an unsigned APK.
 
+## Google Play
+
+[`docs/play.md`](docs/play.md) covers what is done by hand in Play Console and what goes through the API (`tools/aab`, `tools/play`). Store texts and art are in `store/`.
+
+The app signing key in Play is our release key, so GitHub and Play builds can update each other.
+
+## Icon
+
+`store/icon.svg` is the source picture. Keep `app/src/main/res/drawable/ic_launcher_foreground.xml` drawing the same shapes.
+
+`store/icon-512.png` is rendered with:
+
+```bash
+rsvg-convert -w 512 -h 512 store/icon.svg -o store/icon-512.png
+```
+
 ## What controls what
 
 | Input | Synth parameter | Sound |
@@ -124,4 +140,5 @@ The README screenshots come from the emulator: AVD `Phone_API_36`, unlocked with
 - `Sessions.kt`: saving and loading session files.
 - `Mode.kt`: the modes (Bass / Drums / Lead) and the `Frame` layout.
 - `BandView.kt`: touches → band shape → `tension`/`bend`; the looper panel; drawing.
+- `tools/aab`, `tools/play`, `tools/play_api.py`: the Google Play bundle and Play Developer API (a copy of Skeeto's helpers).
 - `MainActivity.kt`: the accelerometer. A low-pass filter splits its signal into tilt (gravity) and shake.

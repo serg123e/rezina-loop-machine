@@ -2,6 +2,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <application
+        android:icon="@mipmap/ic_launcher"
         android:label="Rezina"
         android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen">
         <!-- Portrait is locked: tilting the phone is an input, it must not rotate the screen. -->

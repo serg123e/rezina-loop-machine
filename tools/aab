@@ -1,0 +1,8 @@
+#!/bin/sh
+# Signed release bundle for Google Play → app/build/outputs/bundle/release/app-release.aab.
+# The key is the same one GitHub Actions signs the APK with (see CLAUDE.md, "Releases").
+set -e
+cd "$(dirname "$0")/.."
+REZINA_KEYSTORE="$HOME/.config/rezina/release.jks" \
+REZINA_KEYSTORE_PASSWORD="$(cat "$HOME/.config/rezina/keystore-password")" \
+./gradlew bundleRelease "$@"
