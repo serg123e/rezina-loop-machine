@@ -4,7 +4,10 @@ This is an Android app. You stretch and bend a band on the screen with your fing
 
 There are no libraries. The synth runs on `AudioTrack` (stereo float), and the whole screen is one custom `View`. The README is the user-facing page and has the screenshots.
 
-**iPhone port:** `ios/` is a native Swift copy of this app (same behaviour and session format). Its build and release are in [`ios/CLAUDE.md`](ios/CLAUDE.md). When you change a rule in the Kotlin code, port it there too.
+**Ports.** There are two copies of this app, with the same behaviour and session format. When you change a rule in the Kotlin code, port it to both.
+
+- **iPhone:** `ios/` is a native Swift copy. Build and release: [`ios/CLAUDE.md`](ios/CLAUDE.md).
+- **Browser:** `web/` is a JavaScript copy (AudioWorklet, canvas, installable), deployed to GitHub Pages. Details: [`web/CLAUDE.md`](web/CLAUDE.md).
 
 ## Build and run
 
@@ -97,9 +100,9 @@ Each track plays one of nine sounds (`Mode`), three per family (`Kind`: bass, dr
 `Master`: bass and lead duck under each kick ("pumping"), room on drums, bus compressor, tanh.
 
 - **Session files store the mode's ordinal.** Only append to `Mode`; the first three are what old files called Bass / Drums / Lead.
-- **The sounds were picked by ear on [`docs/sound-lab.html`](docs/sound-lab.html)** (published as the "Звуки Rezina" artifact). Its JavaScript is the reference; `Synth.kt` and `ios/…/Synth.swift` are line-by-line ports. To change a sound, change it on the page first (open the file in a browser and listen), then port the same lines to Kotlin and Swift.
+- **The sounds were picked by ear on [`docs/sound-lab.html`](docs/sound-lab.html)** (published as the "Звуки Rezina" artifact). Its JavaScript is the reference; `Synth.kt`, `ios/…/Synth.swift` and `web/synth.js` are line-by-line ports. To change a sound, change it on the page first (open the file in a browser and listen), then port the same lines to Kotlin, Swift and `web/`.
 - **`Mode.gain`** levels the instruments as on the page: 0.14 / the variant's RMS on the page's phrase × 0.9 (bass), 1 (drums), 0.65 (lead) × 1.5.
-- **`VoiceTest`** (`./gradlew --offline testDebugUnitTest`) renders a fixed gesture in every mode and checks the RMS against numbers from the page's JavaScript. If it fails, the port no longer sounds like what was chosen.
+- **`VoiceTest`** (`./gradlew --offline testDebugUnitTest`) renders a fixed gesture in every mode and checks the RMS against numbers from the page's JavaScript. If it fails, the port no longer sounds like what was chosen. The same check runs for iOS (`make soundcheck`) and the browser (`cd web && npm test`).
 - On the page the drum zones are 0.3/0.7; in the app they are 0.33/0.66, as on the screen grid.
 - Every `Voice` holds all nine instruments; inactive ones get a closed gate, ring out and sleep, so they cost nothing.
 
