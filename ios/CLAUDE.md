@@ -64,3 +64,25 @@ make release         # build + upload → "What to Test" → internal groups →
 ## Not tested
 
 Nothing has run on a device or simulator yet: only the Linux compile (xtool), the Xcode build on GitHub, and a Linux run of `Voice` (no NaNs, sane peaks). Latency, touch feel, CoreMotion signs and gzip compatibility with Android files need a real iPhone.
+
+## Ad hoc build for a specific iPhone
+
+Use this to test without TestFlight. It works even without an App Store Connect app record.
+
+1. **Register the iPhone once.** Its UDID shows in `xtool devices` while the phone is on USB:
+   ```bash
+   bin/asc POST /v1/devices '{"data":{"type":"devices","attributes":{"name":"…","udid":"<UDID>","platform":"IOS"}}}'
+   ```
+2. **Build the ad hoc IPA.**
+   ```bash
+   gh workflow run ios.yml --ref <branch> -f adhoc=true
+   ```
+   The run produces the artifact `Rezina-adhoc` (`Rezina.ipa`). Its profile lists all registered iPhones.
+3. **Install over USB.**
+   ```bash
+   gh run download <run> -n Rezina-adhoc
+   xtool install --usb Rezina.ipa
+   ```
+   xtool re-signs the app with a development profile on the way.
+
+Registered so far: Sergey's iPhone 11 Pro (`00008030-001271063E08802E`), added 2026-11-21.
