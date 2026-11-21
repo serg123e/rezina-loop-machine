@@ -4,6 +4,8 @@ This is an Android app. You stretch and bend a band on the screen with your fing
 
 There are no libraries. The synth runs on `AudioTrack`, and the whole screen is one custom `View`. The README is the user-facing page and has the screenshots.
 
+**iPhone port:** `ios/` is a native Swift copy of this app (same behaviour and session format). Its build and release are in [`ios/CLAUDE.md`](ios/CLAUDE.md). When you change a rule in the Kotlin code, port it there too.
+
 ## Build and run
 
 ```bash

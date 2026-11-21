@@ -1,0 +1,76 @@
+# iOS app (ios/): build on a GitHub macOS runner. The repo is public, so macOS minutes are free.
+# - push / pull request touching ios/: unsigned archive — a compile check with the real Xcode.
+# - manual run with upload=true (`make testflight` / `make release` in ios/): signs with the
+#   App Store Connect API key (secrets ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_P8) and uploads to TestFlight.
+name: ios
+on:
+  push:
+    paths: ["ios/**", ".github/workflows/ios.yml"]
+  pull_request:
+    paths: ["ios/**", ".github/workflows/ios.yml"]
+  workflow_dispatch:
+    inputs:
+      runner:
+        description: "macOS runner (macos-26 is sometimes not available: capacity constraints)"
+        default: macos-15
+      upload:
+        description: "Sign and upload to TestFlight"
+        type: boolean
+        default: false
+
+jobs:
+  build:
+    runs-on: ${{ inputs.runner || 'macos-15' }}
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: ios
+    env:
+      KEY_ID: ${{ secrets.ASC_KEY_ID }}
+      ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Newest released Xcode
+        run: |
+          sudo xcode-select -s "$(ls -d /Applications/Xcode_*.app | grep -vi beta | sort -V | tail -1)"
+          xcodebuild -version
+
+      - name: Xcode project from project.yml
+        run: brew install xcodegen && xcodegen generate
+
+      - name: Archive (unsigned)
+        # the build number must grow: the workflow run number. Unsigned: development signing needs a
+        # registered iPhone; the App Store signature is applied by the export below
+        run: |
+          xcodebuild archive -project Rezina.xcodeproj -scheme Rezina \
+            -destination 'generic/platform=iOS' -archivePath build/Rezina.xcarchive \
+            CURRENT_PROJECT_VERSION=${{ github.run_number }} CODE_SIGNING_ALLOWED=NO
+
+      - name: Bundle check
+        run: |
+          APP=build/Rezina.xcarchive/Products/Applications/Rezina.app
+          ls "$APP"/Assets.car
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' -c 'Print :CFBundleDisplayName' \
+            -c 'Print :CFBundleIcons:CFBundlePrimaryIcon:CFBundleIconName' \
+            -c 'Print :CFBundleShortVersionString' -c 'Print :CFBundleVersion' "$APP/Info.plist"
+
+      - name: API key
+        if: inputs.upload
+        env:
+          KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+        run: |
+          test -n "$KEY_ID" -a -n "$ISSUER_ID" -a -n "$KEY_P8" || { echo "::error::ASC_* secrets are not set"; exit 1; }
+          mkdir -p "$RUNNER_TEMP/keys"
+          printf '%s' "$KEY_P8" > "$RUNNER_TEMP/keys/AuthKey_$KEY_ID.p8"
+          echo "AUTH=-allowProvisioningUpdates -authenticationKeyPath $RUNNER_TEMP/keys/AuthKey_$KEY_ID.p8 -authenticationKeyID $KEY_ID -authenticationKeyIssuerID $ISSUER_ID" >> "$GITHUB_ENV"
+
+      - name: Sign and upload to App Store Connect
+        if: inputs.upload
+        run: |
+          xcodebuild -exportArchive -archivePath build/Rezina.xcarchive \
+            -exportOptionsPlist ExportOptions.plist -exportPath build/export $AUTH
+
+      - name: Remove key
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/keys"

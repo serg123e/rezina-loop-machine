@@ -78,6 +78,10 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 
 There are no third-party libraries. The synth is plain `AudioTrack` and the UI is one custom `View`. See [CLAUDE.md](CLAUDE.md) for how the code is organised.
 
+## iPhone
+
+A native Swift port lives in [`ios/`](ios/): the same instrument, looper and labels, and the same `.rez` save format. It is built on GitHub's macOS runners ([workflow](.github/workflows/ios.yml)) and is not in the App Store yet. See [ios/CLAUDE.md](ios/CLAUDE.md) for how to build it.
+
 ## License
 
 [MIT](LICENSE)

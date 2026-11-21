@@ -1,0 +1,29 @@
+# Xcode project for the cloud build (GitHub Actions, macOS): `xcodegen generate`.
+# On Linux, xtool builds from Package.swift and does not need this file.
+name: Rezina
+options:
+  deploymentTarget:
+    iOS: "18.0"
+settings:
+  base:
+    DEVELOPMENT_TEAM: 3V8G89V7HR
+    CODE_SIGN_STYLE: Automatic
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "0.1"   # the version lives only here (bin/release reads it too)
+    CURRENT_PROJECT_VERSION: "1"
+targets:
+  Rezina:
+    type: application
+    platform: iOS
+    sources:
+      - Sources/Rezina
+      - Resources
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: it.automate123.rezina
+        TARGETED_DEVICE_FAMILY: "1"   # iPhone only
+        # Info.plist holds only our own keys (xtool reads it too); Xcode adds the rest
+        INFOPLIST_FILE: Info.plist
+        GENERATE_INFOPLIST_FILE: YES
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+    scheme: {}
