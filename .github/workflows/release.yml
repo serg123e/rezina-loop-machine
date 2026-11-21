@@ -1,0 +1,50 @@
+# Builds the APK from this repository on GitHub's runners, signs it with the project key and
+# attaches it to a GitHub Release, together with a build-provenance attestation that ties the
+# file to the exact commit and workflow run. Trigger: push a tag like v0.2.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write      # create the release
+  id-token: write      # sign the attestation
+  attestations: write
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: "platforms;android-37.0 build-tools;36.0.0"
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Build signed APK
+        env:
+          REZINA_KEYSTORE_PASSWORD: ${{ secrets.REZINA_KEYSTORE_PASSWORD }}
+        run: |
+          echo "${{ secrets.REZINA_KEYSTORE_BASE64 }}" | base64 -d > "$RUNNER_TEMP/release.jks"
+          REZINA_KEYSTORE="$RUNNER_TEMP/release.jks" ./gradlew assembleRelease
+          cp app/build/outputs/apk/release/app-release.apk rezina-loop-machine.apk
+          sha256sum rezina-loop-machine.apk | tee rezina-loop-machine.apk.sha256
+
+      - uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: rezina-loop-machine.apk
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" rezina-loop-machine.apk rezina-loop-machine.apk.sha256 \
+            --title "Rezina Loop Machine $GITHUB_REF_NAME" --generate-notes
