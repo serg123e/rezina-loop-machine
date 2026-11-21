@@ -43,6 +43,34 @@ tools/play status
    - Contact: `go@123automate.it`.
    - Website: the GitHub repo.
 
-## Status
+## Console automation
 
-- 2026-11-21: listing texts, art and the AAB (versionCode 2) are ready. The app is not created in Play Console yet.
+Play Console can be driven from a terminal through a Chrome with a debug port and a copy of the profile signed in to the account:
+1. Copy `~/.config/google-chrome/Profile 7` together with `Local State` into a scratch directory.
+2. Start Chrome with `--remote-debugging-port=9222 --user-data-dir=<copy> --profile-directory="Profile 7"`.
+3. Connect Playwright with `connect_over_cdp`.
+
+Notes on driving it:
+- Pages are slow. Wait 10+ s after `goto`.
+- Each declaration has a button whose `aria-label` is `Start <name> declaration`.
+
+App id in Console: `4975946927447524594`. Its pages live under `…/developers/9174548521177826933/app/4975946927447524594/`.
+
+## Status (2026-11-21)
+
+- **Created.** The app was created in Console with automatic protection turned **off**, because it would add an installer check to Play builds and nag GitHub installs.
+- **Signing key.** Play generated its own signing key at creation. It was replaced with our key through PEPK, and the fingerprint is `B1:B0:51…`, the same as the GitHub releases.
+- **App content.** All declarations are done:
+  - privacy policy;
+  - no ads;
+  - no sign-in;
+  - no advertising ID;
+  - not a government app;
+  - no financial or health features;
+  - audience 13+;
+  - no data collected or shared;
+  - IARC "All other app types" with all answers "No", which gave PEGI 3, ESRB Everyone, 3+.
+- **Listing.** Category Music & audio. The listing, art and contacts were set via the API.
+- **Countries.** All 178.
+- **In review.** Production **0.2** (versionCode 2) is in review together with all the store changes.
+- **Waiting: 0.3** (versionCode 3, the portrait screen made optional so tablets are not excluded) is saved in production but **not yet submitted**. Send it from Publishing overview once 0.2 is approved, because sending it during the first review would restart that review.
