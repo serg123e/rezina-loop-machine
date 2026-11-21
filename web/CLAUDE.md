@@ -25,12 +25,13 @@ python3 -m http.server 8765            # then http://localhost:8765 (AudioWorkle
 
 ## Deploy
 
-`.github/workflows/web.yml` runs the tests on every push touching `web/`. It publishes `web/` to GitHub Pages from `main`, or from any branch when started by hand:
+`.github/workflows/web.yml` runs the tests on every push touching `web/`. It publishes `web/` to GitHub Pages, **https://123automate.it/rezina-loop-machine/** (the account's Pages domain, behind Cloudflare), from `main`, or from any branch when started by hand:
 
 ```bash
 gh workflow run web.yml --ref <branch>
 ```
 
+- That domain does not redirect http to https, so `index.html` does it: without https there is no AudioWorklet and no sensors.
 - The deploy writes the commit into `sw.js` (`VERSION`), so each deploy gets a fresh offline cache.
 - The service worker fetches from the network first, so an online visit always gets the latest files.
 

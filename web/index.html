@@ -2,6 +2,10 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<script>
+  // AudioWorklet and the motion sensors need https; the domain's http does not redirect by itself
+  if (location.protocol === 'http:' && !/^(localhost|127\.0\.0\.1)$/.test(location.hostname)) location.replace('https:' + location.href.slice(5));
+</script>
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>Rezina Loop Machine</title>
 <meta name="description" content="A rubber band as a musical instrument: stretch it, bend it, tilt and shake the phone, loop four tracks.">
