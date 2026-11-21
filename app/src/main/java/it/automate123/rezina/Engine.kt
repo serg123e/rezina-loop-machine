@@ -10,7 +10,6 @@ import kotlin.math.PI
 import kotlin.math.ceil
 import kotlin.math.exp
 import kotlin.math.sin
-import kotlin.math.tanh
 
 /** One looper track: a recorded gesture plus the sound it is played with. */
 class Track(@Volatile var mode: Mode, val frames: FloatArray) {
@@ -52,6 +51,8 @@ class Engine(
     @Volatile var bend = 0f
     @Volatile var gate = false
     @Volatile var tiltX = 0f
+    /** Extra tilt from where the band points (BandView); added to [tiltX] in the frame, so it is recorded. */
+    @Volatile var aim = 0f
     @Volatile var tiltY = 0f
     @Volatile var shake = 0f
     /** Band shape: [Frame.COUNT]-style layout (count, then x,y pairs, 0..1). Replaced whole, never mutated. */
@@ -134,7 +135,7 @@ class Engine(
     }
 
     private fun run() {
-        val minBuf = AudioTrack.getMinBufferSize(sampleRate, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_FLOAT)
+        val minBuf = AudioTrack.getMinBufferSize(sampleRate, AudioFormat.CHANNEL_OUT_STEREO, AudioFormat.ENCODING_PCM_FLOAT)
         val out = AudioTrack.Builder()
             .setAudioAttributes(
                 AudioAttributes.Builder()
@@ -146,7 +147,7 @@ class Engine(
                 AudioFormat.Builder()
                     .setSampleRate(sampleRate)
                     .setEncoding(AudioFormat.ENCODING_PCM_FLOAT)
-                    .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
+                    .setChannelMask(AudioFormat.CHANNEL_OUT_STEREO)
                     .build()
             )
             .setBufferSizeInBytes(minBuf * 2) // capacity: room for the tuner below to grow into
@@ -165,7 +166,12 @@ class Engine(
         val liveVoice = Voice(sr)
         val voices = tracks.map { Voice(sr) }
         val live = FloatArray(Frame.SIZE)
-        val mix = FloatArray(BLOCK)
+        val toneL = FloatArray(BLOCK)
+        val toneR = FloatArray(BLOCK)
+        val drumL = FloatArray(BLOCK)
+        val drumR = FloatArray(BLOCK)
+        val mix = FloatArray(2 * BLOCK) // interleaved stereo
+        val master = Master(sr)
         val click = Click(sr)
 
         while (running) {
@@ -178,15 +184,19 @@ class Engine(
             live[Frame.TENSION] = tension
             live[Frame.BEND] = bend
             live[Frame.GATE] = if (gate) 1f else 0f
-            live[Frame.TILT_X] = tiltX
+            live[Frame.TILT_X] = (tiltX + aim).coerceIn(-1f, 1f)
             live[Frame.TILT_Y] = tiltY
             live[Frame.SHAKE] = shake
             shape.copyInto(live, Frame.COUNT)
             live[Frame.EVENT] = Frame.EV_NONE
             events.poll()?.copyInto(live, Frame.EVENT)
 
-            mix.fill(0f)
-            liveVoice.render(mix, live, 0, tracks[selected].mode)
+            toneL.fill(0f)
+            toneR.fill(0f)
+            drumL.fill(0f)
+            drumR.fill(0f)
+            val tempo = bpm
+            var kicked = liveVoice.render(toneL, toneR, drumL, drumR, live, 0, tracks[selected].mode, tempo)
 
             val writeAt = (if (loopLen == 0) recCount else pos) * Frame.SIZE
             tracks.forEachIndexed { i, t ->
@@ -198,7 +208,7 @@ class Engine(
                     t.hasContent && loopLen > 0 -> {
                         val o = pos * Frame.SIZE
                         t.level = if (t.muted) 0f else levelOf(t.frames, o)
-                        if (!t.muted) voices[i].render(mix, t.frames, o, t.mode)
+                        if (!t.muted && voices[i].render(toneL, toneR, drumL, drumR, t.frames, o, t.mode, tempo)) kicked = true
                     }
                     else -> t.level = 0f
                 }
@@ -208,6 +218,7 @@ class Engine(
                 barBlocks > 0 -> click.tick(clickBlocks++.toLong() * BLOCK, barBlocks * BLOCK / 4f)
                 metronome && loopLen > 0 -> click.tick(pos.toLong() * BLOCK, loopLen.toFloat() * BLOCK / loopBeats)
             }
+            master.render(toneL, toneR, drumL, drumR, kicked, mix)
             click.render(mix)
 
             if (loopLen > 0) pos = (pos + 1) % loopLen
@@ -217,8 +228,7 @@ class Engine(
                 if (recCount >= limit) stopRecording(t)
             }
 
-            for (i in mix.indices) mix[i] = tanh(mix[i] * 0.8f)
-            out.write(mix, 0, BLOCK, AudioTrack.WRITE_BLOCKING)
+            out.write(mix, 0, mix.size, AudioTrack.WRITE_BLOCKING)
             if (out.underrunCount > underruns) {
                 underruns = out.underrunCount
                 val size = out.setBufferSizeInFrames(out.bufferSizeInFrames + burst)
@@ -334,16 +344,19 @@ class Engine(
             }
         }
 
+        /** Adds the click into interleaved stereo [out], after the master. */
         fun render(out: FloatArray) {
-            for (i in out.indices) {
+            for (i in 0 until BLOCK) {
                 if (i == startIn) {
-                    env = 0.5f
+                    env = 0.35f
                     phase = 0f
                     startIn = -1
                 }
                 if (env < 1e-4f) continue
                 phase += freq / sr
-                out[i] += sin(2f * PI.toFloat() * phase) * env
+                val s = sin(2f * PI.toFloat() * phase) * env
+                out[2 * i] += s
+                out[2 * i + 1] += s
                 env *= decay
             }
             startIn = -1

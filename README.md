@@ -7,7 +7,7 @@
 - **Tilt** the phone to make the sound brighter or add vibrato.
 - **Shake** it to make the sound wobble.
 
-The app is also a 4-track looper. Record a bass line, add drums over it, then a melody. All of it is played on the same band, switched between three modes.
+The app is also a 4-track looper. Record a bass line, add drums over it, then a melody. All of it is played on the same band, with nine sounds: three basses, three drum kits and three leads.
 
 <p>
   <img src="docs/playing.png" width="270" alt="Three tracks playing: ghost bands of the bass and lead, drum hits as bursts, the live band in orange">
@@ -47,12 +47,12 @@ You can also skip the download and build it yourself (see [Build](#build)).
 
 | You do | Sound |
 |---|---|
-| Stretch the band: one finger pulls it from the peg at the bottom; two or more fingers set both ends | Pitch and volume |
+| Stretch the band: one finger pulls it from the peg at the bottom; two or more fingers set both ends | Pitch |
 | Bend the band: move a middle finger off the straight line | Drive and filter resonance |
-| Tilt the phone left or right | Brightness (filter cutoff) |
-| Raise the phone from flat to upright | Vibrato depth |
-| Shake the phone | Wobble; in Drums mode, a shaker |
-| New finger in **Drums** mode | A hit: kick near the peg, then snare/tom, then hi-hat far away |
+| Tilt the phone left or right, or play left or right of centre | Brighter or darker, drums too |
+| Raise the phone from flat to upright | Vibrato; on Growl bass, holding it fully upright makes it wobble in time; drums are tuned up |
+| Shake the phone | Wobble; in Drums mode, a shaker. Hold fingers on the screen to shape it: a longer band is brighter, a bent one rattles |
+| New finger | Bass and Lead: the filter snaps open ("pluck"). **Drums**: a hit — kick near the peg, then tom/snare, then hi-hat far away |
 
 With one finger, the rings around the peg are a note grid. Each ring is a semitone, and the C rings are labelled.
 
@@ -62,7 +62,7 @@ With one finger, the rings around the peg are a note grid. Each ring is a semito
 - **First take.** **● Rec** plays a one-bar count-in, then records. Press **■ Stop** to end the take. The take is rounded to whole bars and sets the loop length.
 - **Later takes.** Each one records exactly one loop and stops by itself.
 - **Metronome and tempo.** **♩** turns the metronome on or off, before or during the loop. **−** and **+** set the tempo before the first take.
-- **Sound.** **Sound** switches the selected track between Bass, Drums and Lead. It works on a track that is already recorded too.
+- **Sound.** The sound button (it shows the name, e.g. **Acid bass ▸**) switches the selected track through nine sounds: Growl, Acid and FM bass; 808, Hard and Lo-fi drums; Pluck, Wide and Voice lead. It works on a track that is already recorded too.
 - **Saving.** **Save** and **Open…** keep loops on the phone. In the list, tap a loop to load it, or hold it to delete it.
 
 Tracks store your **gestures**, not audio. Each track is replayed through its own synth voice and drawn as a "ghost band" in the track's colour, so you see how each part was played.
@@ -76,7 +76,7 @@ You need JDK 21 and the Android SDK with platform 37.
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
-There are no third-party libraries. The synth is plain `AudioTrack` and the UI is one custom `View`. See [CLAUDE.md](CLAUDE.md) for how the code is organised.
+There are no third-party libraries. The synth is plain `AudioTrack` and the UI is one custom `View`. The sounds were chosen on [docs/sound-lab.html](docs/sound-lab.html), a page that plays every variant in the browser. See [CLAUDE.md](CLAUDE.md) for how the code is organised.
 
 ## iPhone
 

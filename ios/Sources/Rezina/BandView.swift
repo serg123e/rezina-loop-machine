@@ -36,7 +36,7 @@ final class BandView: UIView {
     private var scale: CGFloat = 1
 
     /// Saved sessions on show over the band, or nil when the list is closed.
-    private var browser: [Sessions.Entry]?
+    private var browser: [Sessions.Entry]? { didSet { dirty = true } }
     private var listTop: CGFloat { panelBottom + px(110) }
     /// Below the text readout; the note grid is clipped to start here.
     private var gridTop: CGFloat = 0
@@ -44,6 +44,8 @@ final class BandView: UIView {
     private var toastText: String?
     private var toastUntil: CFTimeInterval = 0
     private var link: CADisplayLink?
+    /// Tune of the last drum hit, for the readout.
+    private var lastHit: Float = 0
 
     init(engine: Engine) {
         self.engine = engine
@@ -78,7 +80,31 @@ final class BandView: UIView {
     private final class Tick: NSObject {
         weak var view: BandView?
         init(_ v: BandView) { view = v }
-        @objc func fire() { view?.setNeedsDisplay() }
+        @objc func fire() { view?.frameTick() }
+    }
+
+    /// Set by touches, toasts and layout: draw on the next frame even if nothing else moved.
+    private var dirty = true
+    private var busyLastFrame = false
+    private var drawnTilt: (Float, Float, Float) = (0, 0, 0)
+
+    /// The view is drawn on the CPU, so a full redraw 60 times a second keeps the phone warm even when
+    /// nothing moves. Redraw only while something animates, plus one frame after it stops; when idle,
+    /// only a noticeable change of the tilt/shake readout triggers a frame.
+    func frameTick() {
+        let e = engine
+        let busy = !fingers.isEmpty || e.gate.value || e.countingIn.value >= 0 || e.barBlocks.value > 0
+            || e.tracks.contains { $0.recording.value }
+            || (e.loopLen.value > 0 && e.tracks.contains { $0.hasContent.value && !$0.muted.value })
+            || (toastText != nil && CACurrentMediaTime() < toastUntil + 0.1)
+        let tilt = (e.tiltX.value + e.aim.value, e.tiltY.value, e.shake.value)
+        let moved = abs(tilt.0 - drawnTilt.0) > 0.03 || abs(tilt.1 - drawnTilt.1) > 0.03 || abs(tilt.2 - drawnTilt.2) > 0.03
+        if busy || busyLastFrame || dirty || moved {
+            drawnTilt = tilt
+            dirty = false
+            setNeedsDisplay()
+        }
+        busyLastFrame = busy
     }
 
     // MARK: layout
@@ -90,6 +116,7 @@ final class BandView: UIView {
 
     override func layoutSubviews() {
         super.layoutSubviews()
+        dirty = true
         let w = bounds.width
         let h = bounds.height
         scale = w / 1080
@@ -129,6 +156,7 @@ final class BandView: UIView {
     // MARK: touches
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
+        dirty = true
         for t in touches {
             let p = t.location(in: self)
             let id = ObjectIdentifier(t)
@@ -137,8 +165,12 @@ final class BandView: UIView {
             } else {
                 fingers.append((id, p))
                 updateBand()
-                if engine.liveMode == .drums {
-                    engine.hit(tune: engine.tension.value, vel: 0.6 + 0.4 * engine.shake.value,
+                if engine.liveMode.isDrums {
+                    // each finger hits by its own distance from the peg, as if it were alone:
+                    // the band's tension with several fingers is the distance between them
+                    engine.aim.value = aim([peg, p])
+                    lastHit = tension(at: p)
+                    engine.hit(tune: lastHit, vel: 0.6 + 0.4 * engine.shake.value,
                                x: Float(p.x / bounds.width), y: Float(p.y / bounds.height))
                 }
             }
@@ -146,6 +178,7 @@ final class BandView: UIView {
     }
 
     override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
+        dirty = true
         for t in touches {
             let id = ObjectIdentifier(t)
             if let i = fingers.firstIndex(where: { $0.id == id }) { fingers[i].p = t.location(in: self) }
@@ -154,6 +187,7 @@ final class BandView: UIView {
     }
 
     override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
+        dirty = true
         for t in touches {
             let id = ObjectIdentifier(t)
             if let (p, start) = panelTouches.removeValue(forKey: id) {
@@ -168,6 +202,7 @@ final class BandView: UIView {
     }
 
     override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
+        dirty = true
         for t in touches {
             let id = ObjectIdentifier(t)
             panelTouches[id] = nil
@@ -253,6 +288,7 @@ final class BandView: UIView {
     }
 
     private func toast(_ text: String) {
+        dirty = true
         toastText = text
         toastUntil = CACurrentMediaTime() + 2
     }
@@ -281,7 +317,21 @@ final class BandView: UIView {
         let endDist = dist(band[0], band[band.count - 1])
         engine.tension.value = Float(min(max((pathLen - diagonal * BandView.rest) / (diagonal * BandView.span), 0), 1))
         engine.bend.value = pathLen > 1 ? Float(min(max((pathLen - endDist) / pathLen * 4, 0), 1)) : 0
+        engine.aim.value = aim(band)
         engine.gate.value = true
+    }
+
+    /// The tension one finger at `p` would give: its distance from the peg.
+    private func tension(at p: CGPoint) -> Float {
+        Float(min(max((dist(peg, p) - diagonal * BandView.rest) / (diagonal * BandView.span), 0), 1))
+    }
+
+    /// Where the band points, as extra tilt: the angle of its far end (from the peg) off straight up,
+    /// 45° left = -0.5 … 45° right = +0.5. Playing left of centre sounds like tilting the phone left.
+    private func aim(_ band: [CGPoint]) -> Float {
+        let p = peg
+        let far = dist(p, band[0]) > dist(p, band[band.count - 1]) ? band[0] : band[band.count - 1]
+        return Float(atan2(far.x - p.x, p.y - far.y) / (CGFloat.pi / 2))
     }
 
     /// Orders points into a band: farthest pair are the ends, the rest sorted along the line between them.
@@ -328,8 +378,8 @@ final class BandView: UIView {
         let sound: String
         if !engine.gate.value {
             sound = "—"
-        } else if mode == .drums {
-            sound = BandView.drumZones.first { t < $0.upTo }!.name
+        } else if mode.isDrums {
+            sound = BandView.drumZones.first { lastHit < $0.upTo }!.name // the last finger's zone, not the band's length
         } else {
             let f = mode.freq(t)
             sound = String(format: "%6.1f Hz  ", f) + BandView.noteName(f)
@@ -337,7 +387,8 @@ final class BandView: UIView {
         let lines = [
             "\(mode.title): \(sound)",
             String(format: "stretch %4.2f  bend %4.2f", t, engine.bend.value),
-            String(format: "tilt ↔ %5.2f  ↕ %4.2f  shake %4.2f", engine.tiltX.value, engine.tiltY.value, engine.shake.value),
+            String(format: "tilt ↔ %5.2f  ↕ %4.2f  shake %4.2f", min(max(engine.tiltX.value + engine.aim.value, -1), 1),
+                   engine.tiltY.value, engine.shake.value),
         ]
         let hud = UIFont.monospacedSystemFont(ofSize: px(36), weight: .regular)
         for (i, s) in lines.enumerated() {
@@ -361,7 +412,7 @@ final class BandView: UIView {
         ctx.saveGState()
         ctx.clip(to: CGRect(x: 0, y: gridTop, width: bounds.width, height: bounds.height - gridTop))
         let labelFont = UIFont.systemFont(ofSize: px(30))
-        if mode == .drums {
+        if mode.isDrums {
             var inner: CGFloat = 0
             for (i, zone) in BandView.drumZones.enumerated() {
                 let outer = radius(min(zone.upTo, 1))
@@ -476,7 +527,7 @@ final class BandView: UIView {
             else if !tr.hasContent.value { state = "empty" }
             else if tr.muted.value { state = "muted" }
             else { state = "playing" }
-            text("\(i + 1) \(tr.mode.title)", r.midX, r.minY + r.height * 0.4, label, .white, center: true)
+            text("\(i + 1) \(tr.mode.short)", r.midX, r.minY + r.height * 0.4, label, .white, center: true)
             text(state, r.midX, r.minY + r.height * 0.72, small, .white, center: true)
         }
 
@@ -530,7 +581,7 @@ final class BandView: UIView {
         buttonText(metronome ? "♩ \(engine.bpm.value)" : "♩ off", tempoButton, font)
 
         roundRect(ctx, modeButton, BandView.button)
-        buttonText("Sound: \(selected.mode.title) ▸", modeButton, font)
+        buttonText("\(selected.mode.title) ▸", modeButton, font)
 
         roundRect(ctx, saveButton, BandView.button)
         roundRect(ctx, openButton, BandView.button)

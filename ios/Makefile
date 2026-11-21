@@ -13,6 +13,9 @@ help: ## list targets
 build: ## compile check on Linux (xtool) → xtool/Rezina.app
 	bash -c '$(SWIFTLY) && xtool dev build'
 
+soundcheck: ## render every sound on Linux and compare with the comparison page (as Android VoiceTest)
+	bash -c '$(SWIFTLY) && mkdir -p .build/soundcheck && swiftc -O -o .build/soundcheck/check Tests/soundcheck/main.swift Sources/Rezina/Synth.swift Sources/Rezina/Voice.swift Sources/Rezina/Mode.swift && .build/soundcheck/check'
+
 install: ## build + sign + install on an iPhone over USB (xtool)
 	bash -c '$(SWIFTLY) && xtool dev'
 

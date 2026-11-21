@@ -15,6 +15,8 @@ import android.view.View
 import android.widget.Toast
 import java.io.File
 import kotlin.concurrent.thread
+import kotlin.math.PI
+import kotlin.math.atan2
 import kotlin.math.ceil
 import kotlin.math.floor
 import kotlin.math.log2
@@ -60,6 +62,8 @@ class BandView(context: Context, private val engine: Engine) : View(context) {
 
     /** Saved sessions on show over the band, or null when the list is closed. */
     private var browser: List<Sessions.Entry>? = null
+    /** Tune of the last drum hit, for the readout. */
+    private var lastHit = 0f
     private val sessionsDir = File(context.filesDir, "sessions")
     private val listTop get() = panelBottom + 110f
     /** Below the text readout; the note grid is clipped to start here. */
@@ -136,8 +140,13 @@ class BandView(context: Context, private val engine: Engine) : View(context) {
                 } else {
                     fingers[id] = PointF(x, y)
                     updateBand()
-                    if (engine.liveMode == Mode.DRUMS) {
-                        engine.hit(engine.tension, 0.6f + 0.4f * engine.shake, x / width, y / height)
+                    if (engine.liveMode.drums) {
+                        // each finger hits by its own distance from the peg, as if it were alone:
+                        // the band's tension with several fingers is the distance between them
+                        val p = PointF(x, y)
+                        engine.aim = aim(listOf(peg, p))
+                        lastHit = tensionAt(p)
+                        engine.hit(lastHit, 0.6f + 0.4f * engine.shake, x / width, y / height)
                     }
                 }
             }
@@ -242,7 +251,21 @@ class BandView(context: Context, private val engine: Engine) : View(context) {
         val endDist = dist(band.first(), band.last())
         engine.tension = ((pathLen - diagonal * REST) / (diagonal * SPAN)).coerceIn(0f, 1f)
         engine.bend = if (pathLen > 1f) ((pathLen - endDist) / pathLen * 4f).coerceIn(0f, 1f) else 0f
+        engine.aim = aim(band)
         engine.gate = true
+    }
+
+    /** The tension one finger at [p] would give: its distance from the peg. */
+    private fun tensionAt(p: PointF) = ((dist(peg, p) - diagonal * REST) / (diagonal * SPAN)).coerceIn(0f, 1f)
+
+    /**
+     * Where the band points, as extra tilt: the angle of its far end (from the peg) off straight up,
+     * 45° left = -0.5 … 45° right = +0.5. Playing left of centre sounds like tilting the phone left.
+     */
+    private fun aim(band: List<PointF>): Float {
+        val p = peg
+        val far = if (dist(p, band.first()) > dist(p, band.last())) band.first() else band.last()
+        return atan2(far.x - p.x, p.y - far.y) / (PI.toFloat() / 2f)
     }
 
     /** Orders points into a band: farthest pair are the ends, the rest sorted along the line between them. */
@@ -277,8 +300,8 @@ class BandView(context: Context, private val engine: Engine) : View(context) {
         val t = engine.tension
         val sound = if (!engine.gate) {
             "—"
-        } else if (mode == Mode.DRUMS) {
-            DRUM_ZONES.first { t < it.first }.second
+        } else if (mode.drums) {
+            DRUM_ZONES.first { lastHit < it.first }.second // the last finger's zone, not the band's length
         } else {
             val f = mode.freq(t)
             "%6.1f Hz  %s".format(f, noteName(f))
@@ -286,7 +309,7 @@ class BandView(context: Context, private val engine: Engine) : View(context) {
         val lines = listOf(
             "${mode.title}: $sound",
             "stretch %4.2f  bend %4.2f".format(t, engine.bend),
-            "tilt ↔ %5.2f  ↕ %4.2f  shake %4.2f".format(engine.tiltX, engine.tiltY, engine.shake),
+            "tilt ↔ %5.2f  ↕ %4.2f  shake %4.2f".format((engine.tiltX + engine.aim).coerceIn(-1f, 1f), engine.tiltY, engine.shake),
         )
         lines.forEachIndexed { i, s -> canvas.drawText(s, 24f, panelBottom + 50f + i * 46f, hud) }
         gridTop = panelBottom + 50f + lines.size * 46f
@@ -309,7 +332,7 @@ class BandView(context: Context, private val engine: Engine) : View(context) {
         val c = peg
         canvas.save()
         canvas.clipRect(0f, gridTop, width.toFloat(), height.toFloat())
-        if (mode == Mode.DRUMS) {
+        if (mode.drums) {
             var inner = 0f
             DRUM_ZONES.forEachIndexed { i, (upTo, name) ->
                 val outer = radius(upTo.coerceAtMost(1f))
@@ -409,7 +432,7 @@ class BandView(context: Context, private val engine: Engine) : View(context) {
                 else -> "playing"
             }
             label.textSize = 34f
-            canvas.drawText("${i + 1} ${tr.mode.title}", r.centerX(), r.top + r.height() * 0.4f, label)
+            canvas.drawText("${i + 1} ${tr.mode.short}", r.centerX(), r.top + r.height() * 0.4f, label)
             label.textSize = 28f
             canvas.drawText(state, r.centerX(), r.top + r.height() * 0.72f, label)
         }
@@ -466,7 +489,7 @@ class BandView(context: Context, private val engine: Engine) : View(context) {
         fill.color = Color.rgb(60, 60, 72)
 
         canvas.drawRoundRect(modeButton, 16f, 16f, fill)
-        canvas.drawText("Sound: ${selected.mode.title} ▸", modeButton.centerX(), modeButton.centerY() + 13f, label)
+        canvas.drawText("${selected.mode.title} ▸", modeButton.centerX(), modeButton.centerY() + 13f, label)
 
         for (r in listOf(saveButton, openButton)) canvas.drawRoundRect(r, 16f, 16f, fill)
         canvas.drawText("Save", saveButton.centerX(), saveButton.centerY() + 13f, label)

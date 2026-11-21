@@ -16,6 +16,7 @@ GitHub: push → .github/workflows/ios.yml (XcodeGen, project.yml) → unsigned 
 cd ios
 make build        # xtool on Linux → xtool/Rezina.app (needs swiftly + `xtool sdk install`, as for CamJamProbe)
 make ci           # unsigned Xcode build of the pushed branch on GitHub
+make soundcheck   # every sound vs the comparison page's numbers, on Linux
 make icon         # re-render Resources/Assets.xcassets/AppIcon.appiconset/icon-1024.png from ../store/icon.svg
 ```
 
@@ -41,8 +42,11 @@ make release         # build + upload → "What to Test" → internal groups →
 ## Code (`Sources/Rezina/`)
 
 - `Engine.swift` (Engine.kt): `AVAudioSourceNode` render callback + the looper. The UI and sensors write only atomic fields; looper changes go through a lock-free single-producer ring (`Ring`), so only the render thread mutates looper state. The render thread does not allocate or lock.
-- `Voice.swift` (Voice.kt): the synth. `Mode.swift` (Mode.kt): modes and the `Frame` layout.
+- `Voice.swift` (Voice.kt), `Synth.swift` (Synth.kt): the instruments and the master bus, stereo. `Mode.swift` (Mode.kt): modes and the `Frame` layout. The source node is 2-channel non-interleaved.
+- `Mode.swift` raw values = Kotlin `Mode` ordinals (they are in session files); `Kind` is the family.
+- **Sound check on Linux:** `make soundcheck` renders the gestures of Android `VoiceTest` in every mode (`Tests/soundcheck/main.swift`) and must print `ok` for each: the same numbers as the `page` map there.
 - `BandView.swift` (BandView.kt): touches → band → tension/bend, the panel, note grid, ghosts, saved-loop list, toasts. Android pixel constants go through `px()`: scaled to a 1080 px wide screen.
+- **The view is drawn on the CPU**, so `frameTick()` redraws only while something moves (fingers, a playing loop, count-in, a toast), plus one frame after, or when the tilt readout changes by more than 0.03. Redrawing every frame kept the phone warm while idle. Anything new that animates must count as busy there.
 - `Motion.swift` (MainActivity.kt): accelerometer at 50 Hz, converted to Android's axes and m/s², then the same tilt/shake filter.
 - `Sessions.swift` + `Gzip.swift` (Sessions.kt): `.rez` files in `Documents/sessions/`. gzip is written by hand around Foundation's raw DEFLATE.
 - `Atomics.swift`: `AtomicFloat/Int/Bool` wrappers and `Ring`. `RezinaApp.swift`: app shell, start/stop on scene phase.

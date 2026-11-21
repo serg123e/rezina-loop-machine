@@ -1,0 +1,772 @@
+<title>Звуки Rezina</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one column of instrument sections; each section is a row of variant "pedals" that wrap to one column on phones. Dark only, like the app. */
+:root {
+  --bg: #14141c;
+  --panel: #1c1c27;
+  --panel-2: #252533;
+  --line: #34344a;
+  --fg: #eceaf2;
+  --muted: #9a98ae;
+  --band: #ff8a3d;
+  --band-soft: rgba(255, 138, 61, 0.14);
+  --ok: #7ad69b;
+  --display: "Unbounded", "Arial Black", system-ui, sans-serif;
+  --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--fg); font: 15px/1.5 var(--body);
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 24px 64px;
+}
+.wrap { max-width: 1080px; margin: 0 auto; display: grid; gap: 40px; }
+header { display: grid; gap: 12px; }
+header svg { width: 100%; max-width: 420px; height: 46px; display: block; }
+h1 { font: 700 clamp(28px, 5vw, 42px)/1.1 var(--display); margin: 0; letter-spacing: -0.01em; text-wrap: balance; }
+h2 { font: 500 20px/1.2 var(--display); margin: 0; }
+.lede { color: var(--muted); max-width: 64ch; margin: 0; }
+.bar { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; font-size: 14px; }
+.toggle { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; user-select: none; }
+.toggle input { accent-color: var(--band); width: 18px; height: 18px; }
+.status { font: 13px var(--mono); color: var(--muted); }
+.status.ok { color: var(--ok); }
+
+section { display: grid; gap: 14px; }
+.sec-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 14px; }
+.phrase { font: 13px var(--mono); color: var(--muted); }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; }
+
+.card {
+  background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+  padding: 14px; display: grid; gap: 10px; align-content: start; min-width: 0;
+  transition: border-color .15s, background .15s;
+}
+.card.picked { border-color: var(--band); background: linear-gradient(var(--band-soft), var(--band-soft)), var(--panel); }
+.card .top { display: flex; align-items: center; gap: 10px; }
+.card h3 { font: 600 16px/1.2 var(--body); margin: 0; flex: 1; min-width: 0; }
+.tag { font: 11px var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); border: 1px solid var(--line); border-radius: 4px; padding: 1px 6px; }
+.card p { margin: 0; font-size: 14px; color: var(--fg); }
+.card .gest { font: 12px/1.45 var(--mono); color: var(--muted); }
+.wave { position: relative; height: 48px; border-radius: 6px; background: var(--panel-2); overflow: hidden; }
+.wave canvas { width: 100%; height: 100%; display: block; }
+.wave .head { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--fg); left: 0; opacity: 0; }
+.wave.on .head { opacity: .9; }
+.wave .wait { position: absolute; inset: 0; display: grid; place-items: center; font: 12px var(--mono); color: var(--muted); }
+.row { display: flex; gap: 8px; }
+button {
+  font: 500 14px var(--body); color: var(--fg); background: var(--panel-2);
+  border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; cursor: pointer;
+  display: inline-flex; align-items: center; gap: 8px; min-height: 40px;
+}
+button:hover { border-color: var(--muted); }
+button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px solid var(--band); outline-offset: 2px; }
+button:disabled { opacity: .5; cursor: default; }
+button.play { flex: 1; justify-content: center; }
+button.play.on { background: var(--band); color: #1a1008; border-color: var(--band); }
+button.pick[aria-pressed="true"] { border-color: var(--band); color: var(--band); }
+
+.mix { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 18px; display: grid; gap: 14px; }
+.mix .sel { font: 13px var(--mono); color: var(--muted); }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.seg button { border: 0; border-radius: 0; background: transparent; }
+.seg button[aria-pressed="true"] { background: var(--band); color: #1a1008; }
+textarea {
+  width: 100%; min-height: 84px; resize: vertical; font: 14px/1.5 var(--body); color: var(--fg);
+  background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 10px;
+}
+label.lbl { font-size: 14px; color: var(--muted); }
+@media (prefers-reduced-motion: reduce) { .card { transition: none; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <svg viewBox="0 0 420 46" aria-hidden="true">
+      <circle cx="10" cy="36" r="6" fill="var(--muted)"/>
+      <path id="bandPath" d="M10 36 Q 210 4 410 30" stroke="var(--band)" stroke-width="4" fill="none" stroke-linecap="round"/>
+      <circle cx="410" cy="30" r="7" fill="var(--band)"/>
+    </svg>
+    <h1>Звуки Rezina</h1>
+    <p class="lede">Каждый вариант играет одну и ту же фразу: 4 такта, 100 bpm. Это такие же жесты, как на резинке: к концу фразы наклон открывает фильтр, а изгиб усиливается. Громкость всех вариантов выровнена, чтобы громкий не казался лучше. Нажми «Беру этот» на понравившемся в каждой секции. Внизу собери всё вместе.</p>
+    <div class="bar">
+      <label class="toggle"><input type="checkbox" id="phone"> Слушать как через динамик телефона</label>
+      <span class="status" id="status">Считаю звуки…</span>
+    </div>
+  </header>
+
+  <div id="sections"></div>
+
+  <section class="mix" aria-labelledby="mixTitle">
+    <div class="sec-head"><h2 id="mixTitle">Всё вместе</h2><span class="sel" id="mixSel"></span></div>
+    <div class="bar">
+      <span>Мастер:</span>
+      <div class="seg" role="group" aria-label="Мастер">
+        <button id="mPlain" aria-pressed="false">Как сейчас</button>
+        <button id="mJuicy" aria-pressed="true">Сочный</button>
+      </div>
+    </div>
+    <p class="lede" style="font-size:14px">«Сочный» мастер: бас и мелодия чуть приседают на каждый удар бочки, поэтому звук «качает». Плюс общий компрессор и немного пространства на барабанах. «Как сейчас» — просто сумма, как в приложении.</p>
+    <div class="wave" id="mixWave"><canvas></canvas><div class="head"></div></div>
+    <div class="row"><button class="play" id="mixPlay">▶ Играть луп</button></div>
+    <label class="lbl" for="note">Что подкрутить (необязательно): например, «бас пожирнее, эхо короче»</label>
+    <textarea id="note"></textarea>
+  </section>
+</div>
+
+<script id="dsp">
+// ---- DSP. Everything here is plain per-sample code so the chosen variant ports 1:1 to Kotlin/Swift. ----
+const TAU = Math.PI * 2, SR = 48000, BPM = 100, BEAT = 60 / BPM, BEATS = 16;
+const N = Math.round(BEATS * BEAT * SR), BLK = 64;
+const clamp = (x, a, b) => (x < a ? a : x > b ? b : x);
+const glide = s => 1 - Math.exp(-1 / (s * SR));
+const decay = s => Math.exp(-1 / (s * SR));
+const wrap = p => (p >= 1 ? p - 1 : p);
+function saw(p, dt) {
+  let v = 2 * p - 1;
+  if (p < dt) { const t = p / dt; v -= t + t - t * t - 1; }
+  else if (p > 1 - dt) { const t = (p - 1) / dt; v -= t * t + t + t + 1; }
+  return v;
+}
+const sqr = (p, dt) => 0.5 * (saw(p, dt) - saw(p >= 0.5 ? p - 0.5 : p + 0.5, dt));
+let seed = 22222;
+function noise() { seed ^= seed << 13; seed ^= seed >>> 17; seed ^= seed << 5; return (seed | 0) / 2147483648; }
+
+/** Zavalishin TPT state-variable filter: run() returns low-pass, .bp and .hp hold the other outputs. */
+class SVF {
+  constructor() { this.a = 0; this.b = 0; this.g = 0.1; this.k = 1.4; this.bp = 0; this.hp = 0; }
+  set(fc, k) { this.g = Math.tan(Math.PI * clamp(fc, 10, SR * 0.45) / SR); this.k = k; }
+  run(x) {
+    const g = this.g, k = this.k, a1 = 1 / (1 + g * (g + k));
+    const v1 = a1 * (this.a + g * (x - this.b)), v2 = this.b + g * v1;
+    this.a = 2 * v1 - this.a; this.b = 2 * v2 - this.b;
+    this.bp = v1; this.hp = x - k * v1 - v2;
+    return v2;
+  }
+}
+/** Ping-pong echo with a darkened feedback path. */
+class PingPong {
+  constructor(sec, fb, tone) { this.n = Math.round(sec * SR); this.l = new Float32Array(this.n); this.r = new Float32Array(this.n); this.i = 0; this.fb = fb; this.lp = 0; this.c = glide(1 / (TAU * tone)); this.oL = 0; this.oR = 0; }
+  run(x) {
+    const i = this.i, yl = this.l[i], yr = this.r[i];
+    this.lp += (yr - this.lp) * this.c;
+    this.l[i] = x + this.lp * this.fb; this.r[i] = yl * this.fb;
+    this.i = i + 1 === this.n ? 0 : i + 1; this.oL = yl; this.oR = yr;
+  }
+}
+/** Small Freeverb: 4 combs + 2 allpasses per side. */
+class Reverb {
+  constructor(size = 1, fb = 0.82, damp = 0.3) {
+    const s = SR / 44100 * size, mk = (n) => ({ b: new Float32Array(Math.max(8, Math.round(n * s))), i: 0, f: 0 });
+    this.cl = [1557, 1617, 1491, 1422].map(mk); this.cr = [1580, 1640, 1514, 1445].map(mk);
+    this.al = [556, 441].map(n => mk(n / size)); this.ar = [579, 464].map(n => mk(n / size));
+    this.fb = fb; this.d = damp; this.oL = 0; this.oR = 0;
+  }
+  comb(c, x) { const y = c.b[c.i]; c.f = y * (1 - this.d) + c.f * this.d; c.b[c.i] = x + c.f * this.fb; if (++c.i === c.b.length) c.i = 0; return y; }
+  ap(a, x) { const y = a.b[a.i]; a.b[a.i] = x + y * 0.5; if (++a.i === a.b.length) a.i = 0; return y - x; }
+  run(l, r) {
+    const x = (l + r) * 0.08; let yl = 0, yr = 0;
+    for (let j = 0; j < 4; j++) { yl += this.comb(this.cl[j], x); yr += this.comb(this.cr[j], x); }
+    for (let j = 0; j < 2; j++) { yl = this.ap(this.al[j], yl); yr = this.ap(this.ar[j], yr); }
+    this.oL = yl; this.oR = yr;
+  }
+}
+/** Short fixed delay line (Haas widening, chorus). */
+class Line {
+  constructor(maxSec) { this.b = new Float32Array(Math.round(maxSec * SR) + 2); this.i = 0; }
+  push(x) { this.b[this.i] = x; if (++this.i === this.b.length) this.i = 0; }
+  tap(sec) { const d = sec * SR, n = this.b.length; let p = this.i - 1 - d; while (p < 0) p += n; const i0 = Math.floor(p), f = p - i0; return this.b[i0] * (1 - f) + this.b[(i0 + 1) % n] * f; }
+}
+
+// ---- The gesture script: the same notes, bends and tilts for every variant ----
+const MODES = { bass: { base: 27.5, oct: 3.5 }, lead: { base: 110, oct: 4 }, drums: { base: 45, oct: 3 } };
+function melodic(notes, mode, g) {
+  notes.sort((a, b) => a.beat - b.beat);
+  notes.forEach((n, i) => { const nx = notes[i + 1]; n.end = n.beat + n.len - (nx && nx.leg ? 0 : 0.1); });
+  const m = MODES[mode];
+  return (tb, c) => {
+    let cur = null;
+    for (const n of notes) if (tb >= n.beat && tb < n.end) { cur = n; break; }
+    c.on = !!cur && cur !== c.last && !cur.leg;
+    c.gate = !!cur;
+    if (cur) {
+      c.last = cur;
+      const fr = cur.to ? Math.min(1, (tb - cur.beat) / (cur.len * 0.5)) : 0;
+      c.freq = cur.to ? cur.f * Math.pow(cur.to / cur.f, fr) : cur.f;
+      c.tiltY = cur.vib ? cur.vib * Math.min(1, (tb - cur.beat) / (cur.len * 0.6)) : 0;
+    } else { c.last = null; c.tiltY = 0; c.freq = c.freq || notes[0].f; }
+    c.t = clamp(Math.log2(c.freq / m.base) / m.oct, 0, 1);
+    c.bend = cur && cur.bend != null ? cur.bend : g.bend(tb);
+    c.tiltX = g.tilt(tb); c.shake = g.shake(tb);
+  };
+}
+function shift(list, by, extra) { return list.map(([b, l, f, o]) => [b + by, l, f, Object.assign({}, o, extra)]); }
+const toNotes = list => list.map(([beat, len, f, o]) => Object.assign({ beat, len, f }, o));
+
+const A1 = 55, C2 = 65.41, D2 = 73.42, E2 = 82.41, G1 = 49, A2 = 110, G2 = 98;
+const bassBar0 = [[0, .75, A1], [1, .5, A1], [1.5, .5, A2], [2, .75, C2], [3, .5, D2], [3.5, .5, E2]];
+const bassBar1 = [[4, .75, A1], [5, .5, A2], [5.5, 1, G1, { vib: .6 }], [7, .5, A1], [7.5, .5, C2, { to: G2 }]];
+const BASS = melodic(toNotes([...bassBar0, ...bassBar1, ...shift(bassBar0, 8, { bend: .45 }), ...shift(bassBar1, 8, { bend: .7, vib: 1 })]), 'bass',
+  { bend: tb => 0.1 + 0.25 * tb / 16, tilt: tb => -0.7 + 1.4 * tb / 16, shake: () => 0 });
+
+const E4 = 329.63, A4 = 440, C5 = 523.25, B4 = 493.88, G4 = 392, D5 = 587.33, E5 = 659.26, A5 = 880;
+const leadBar0 = [[0, 1, E4], [1, 1, A4], [2, .5, C5], [2.5, .5, B4], [3, 1, A4, { vib: .8 }]];
+const leadBar1 = [[4, .5, G4], [4.5, .5, A4], [5, 1.5, D5, { to: E5, vib: .7 }], [6.5, .5, D5], [7, 1, C5, { vib: .6 }]];
+const leadBar3 = [[12, 1, A4], [13, .5, C5], [13.5, .5, D5], [14, 1, E5, { vib: .5 }], [15, 1, E5, { to: A5, leg: true, vib: 1 }]];
+const LEAD = melodic(toNotes([...leadBar0, ...leadBar1, ...shift(leadBar0, 8, { bend: .4 }), ...leadBar3]), 'lead',
+  { bend: tb => 0.1 + 0.3 * tb / 16, tilt: tb => -0.2 + 0.6 * tb / 16 + 0.35 * Math.sin(TAU * tb / 8), shake: tb => (tb > 15.3 ? 0.5 : 0) });
+
+/** Drum hits: [beat, tune 0=kick … 1=hat, velocity]. Tune 0.3–0.7 is the tom/snare zone. */
+const DRUM_HITS = (() => {
+  const h = [];
+  for (let bar = 0; bar < 4; bar++) {
+    const o = bar * 4, bend = bar === 2 ? 0.4 : 0.1;
+    h.push([o, .08, 1, bend], [o + 2, .08, .9, bend]);
+    if (bar % 2) h.push([o + 2.5, .1, .8, bend]);
+    h.push([o + 1, .55, .95, bend]);
+    if (bar < 3) h.push([o + 3, .55, .95, bend]);
+    for (let e = 0; e < 8; e++) if (!(bar === 3 && e >= 6)) h.push([o + e * .5, .9, e % 2 ? .45 : .75, bend]);
+  }
+  h.push([15, .45, .9, .2], [15.25, .4, .8, .2], [15.5, .35, .9, .2], [15.75, .3, 1, .2]);
+  return h.sort((a, b) => a[0] - b[0]);
+})();
+// beats 12–14: shaking; from beat 13 fingers hold a long, bent band, which makes the shaker brighter and grainier
+const DRUM_CTRL = (tb, c) => { c.gate = false; c.on = false; c.held = tb >= 13 && tb < 14; c.t = c.held ? .85 : 0; c.freq = 60; c.bend = c.held ? .7 : 0.1; c.tiltX = 0; c.tiltY = 0; c.shake = tb >= 12 && tb < 14 ? 0.7 : 0; };
+
+/** Renders two passes of the loop and keeps the second, so echo and reverb tails wrap around seamlessly. */
+function renderTrack(voice, ctrl, hits) {
+  const L = new Float32Array(2 * N), R = new Float32Array(2 * N), c = {};
+  let hi = 0;
+  for (let i0 = 0; i0 < 2 * N; i0 += BLK) {
+    const tb = (i0 % N) / SR / BEAT, tb1 = tb + BLK / SR / BEAT;
+    if (i0 % N === 0) hi = 0;
+    ctrl(tb, c);
+    if (hits) while (hi < hits.length && hits[hi][0] < tb1) { const h = hits[hi++]; if (h[0] >= tb - 1e-9) voice.hit(h[1], h[2], h[3]); }
+    voice.block(c, L, R, i0, Math.min(BLK, 2 * N - i0));
+  }
+  return { L: L.slice(N), R: R.slice(N) };
+}
+
+// ---- Current app voice, ported as-is from Voice.kt (mono) ----
+class CurVoice {
+  constructor(mode) {
+    Object.assign(this, { mode, pg: glide(.012), att: glide(.005), rel: glide(.06), parg: glide(.03), swg: glide(.03),
+      freq: 110, amp: 0, cut: 1000, drive: 1, damp: 1.4, p1: 0, p2: 0, ps: 0, vp: 0, wp: 0, f: new SVF(),
+      dT: 60, dF: 60, dP: 0, bE: 0, bD: 0, nE: 0, nD: 0, nLp: 0 });
+  }
+  hit(tune, vel, bend) {
+    const m = MODES.drums; this.dT = m.base * 2 ** (tune * m.oct); this.dF = this.dT * 3;
+    this.bE = vel * (1 - .8 * tune); this.bD = decay(.3 * (1 - .7 * tune) * (1 + 2 * bend));
+    this.nE = vel * (.1 + .9 * tune); this.nD = decay(.04 + .12 * (1 - tune) + .2 * bend);
+  }
+  block(c, L, R, i0, n) {
+    const bass = this.mode === 'bass', drums = this.mode === 'drums', t = c.t, b = c.bend;
+    const ta = !c.gate || drums ? 0 : bass ? .5 + .5 * t : .25 + .75 * t;
+    const bright = (c.tiltX + 1) / 2;
+    const tc = Math.min((bass ? 60 * 2 ** (bright * 5) : 150 * 2 ** (bright * 6)) * (1 + 2 * c.shake), SR * .45);
+    const td = 1 + 5 * b, tdm = bass ? 1.4 - .9 * b : 1.4 - 1.25 * b, vib = .6 * c.tiltY, wob = 1.5 * c.shake;
+    const nHp = .1 + .5 * bright, shaker = drums ? .3 * c.shake * c.shake : 0, idle = ta === 0 && this.amp < 1e-4;
+    for (let i = 0; i < n; i++) {
+      let s = 0;
+      if (!idle) {
+        this.freq += (c.freq - this.freq) * this.pg;
+        this.amp += (ta - this.amp) * (ta > this.amp ? this.att : this.rel);
+        this.cut += (tc - this.cut) * this.parg; this.drive += (td - this.drive) * this.parg; this.damp += (tdm - this.damp) * this.parg;
+        this.vp = wrap(this.vp + 5.5 / SR); this.wp = wrap(this.wp + 11 / SR);
+        const f = this.freq * 2 ** ((vib * Math.sin(TAU * this.vp) + wob * Math.sin(TAU * this.wp)) / 12);
+        const d1 = f * 1.004 / SR, d2 = f * .996 / SR;
+        this.p1 = wrap(this.p1 + d1); this.p2 = wrap(this.p2 + d2);
+        let x = .5 * (saw(this.p1, d1) + saw(this.p2, d2));
+        if (bass) { this.ps = wrap(this.ps + f * .5 / SR); x = .5 * x + .7 * Math.sin(TAU * this.ps); }
+        x = Math.tanh(x * this.drive) / Math.max(Math.tanh(this.drive), .5);
+        if ((i & 31) === 0) this.f.set(this.cut, this.damp); else this.f.k = this.damp;
+        s += this.f.run(x) * this.amp * (1 - .3 * c.shake * Math.abs(Math.sin(TAU * this.wp)));
+      }
+      if (this.bE > 1e-4 || this.nE > 1e-4 || shaker > 0) {
+        this.dF += (this.dT - this.dF) * this.swg; this.dP = wrap(this.dP + this.dF / SR);
+        s += Math.sin(TAU * this.dP) * this.bE; this.bE *= this.bD;
+        const z = noise(); this.nLp += (z - this.nLp) * (1 - nHp);
+        s += (z - this.nLp) * (.6 * this.nE + shaker); this.nE *= this.nD;
+      }
+      L[i0 + i] += s; R[i0 + i] += s;
+    }
+  }
+}
+
+// ---- Shared bits of the new melodic voices ----
+class Mel {
+  constructor(pitchGlide, att, rel) { this.freq = 110; this.amp = 0; this.env = 0; this.envD = decay(.2); this.pg = glide(pitchGlide); this.att = glide(att); this.rel = glide(rel); this.vp = 0; this.wp = 0; this.inited = false; }
+  step(c, ta, vibDepth) { // per sample: glide pitch, amp, envelope; returns modulated frequency
+    if (!this.inited) { this.freq = c.freq; this.inited = true; }
+    this.freq += (c.freq - this.freq) * this.pg;
+    this.amp += (ta - this.amp) * (ta > this.amp ? this.att : this.rel);
+    this.env *= this.envD;
+    this.vp = wrap(this.vp + 5.5 / SR); this.wp = wrap(this.wp + 11 / SR);
+    return this.freq * 2 ** ((vibDepth * Math.sin(TAU * this.vp) + 1.5 * c.shake * Math.sin(TAU * this.wp)) / 12);
+  }
+}
+
+// Bass: acid. One saw, resonant low-pass that snaps open on every note and falls back ("квак").
+class AcidBass extends Mel {
+  constructor() { super(.035, .002, .04); this.f = new SVF(); this.p = 0; this.ps = 0; this.acc = 1; }
+  block(c, L, R, i0, n) {
+    if (c.on) { this.env = 1; this.envD = decay(.14 + .5 * c.bend); }
+    const bright = (c.tiltX + 1) / 2, base = 80 * 2 ** (bright * 3.5), envOct = 2.5 + 3 * c.bend;
+    const k = .5 - .4 * c.bend, ta = c.gate ? 1 : 0, drv = 2 + 4 * c.bend;
+    for (let i = 0; i < n; i++) {
+      const f = this.step(c, ta, .3 * c.tiltY), dt = f / SR;
+      this.p = wrap(this.p + dt); this.ps = wrap(this.ps + dt);
+      if ((i & 7) === 0) this.f.set(base * 2 ** (this.env * envOct), k);
+      const y = Math.tanh(this.f.run(saw(this.p, dt) * 1.2) * drv) * .8;
+      const s = (y + .35 * Math.sin(TAU * this.ps)) * this.amp * (.75 + .25 * this.env);
+      L[i0 + i] += s; R[i0 + i] += s;
+    }
+  }
+}
+
+// Bass: growl. Three detuned saws, drive, low-pass with an eighth-note wobble on lift; clean sub under it; top widened.
+class GrowlBass extends Mel {
+  constructor() { super(.02, .004, .06); this.p = [0, .33, .67]; this.ps = 0; this.f = new SVF(); this.lfo = 0; this.hlp = 0; this.line = new Line(.02); }
+  block(c, L, R, i0, n) {
+    if (c.on) { this.env = 1; this.envD = decay(.25); }
+    // the phone is held at an angle while playing: only the last stretch toward upright wobbles
+    const bright = (c.tiltX + 1) / 2, base = 110 * 2 ** (bright * 4.2), wub = clamp((c.tiltY - .8) / .2, 0, 1), drv = 1.5 + 5 * c.bend;
+    const k = .95 - .55 * c.bend, ta = c.gate ? 1 : 0, r = [1, 1.0065, .9938], hc = glide(1 / (TAU * 250));
+    for (let i = 0; i < n; i++) {
+      const f = this.step(c, ta, 0);
+      this.lfo = wrap(this.lfo + BPM / 60 * 2 / SR);
+      let x = 0;
+      for (let j = 0; j < 3; j++) { const dt = f * r[j] / SR; this.p[j] = wrap(this.p[j] + dt); x += saw(this.p[j], dt); }
+      x = Math.tanh(x * .4 * drv);
+      if ((i & 7) === 0) this.f.set(base * (1 + 1.5 * this.env) * 2 ** ((.5 - .5 * Math.cos(TAU * this.lfo)) * wub * 3 - wub * 1.2), k);
+      let y = this.f.run(x); y = Math.tanh((y + .3 * this.f.bp) * 1.5);
+      this.ps = wrap(this.ps + f / SR);
+      const sub = .55 * Math.sin(TAU * this.ps);
+      this.hlp += (y - this.hlp) * hc; const hi = y - this.hlp;
+      this.line.push(hi); const hiD = this.line.tap(.011);
+      L[i0 + i] += (y + sub) * this.amp; R[i0 + i] += (y - hi + hiD + sub) * this.amp;
+    }
+  }
+}
+
+// Bass: FM. A sine phase-modulated by itself: a bright bark on the attack, lots of mids that small speakers can play.
+class FMBass extends Mel {
+  constructor() { super(.02, .002, .05); this.pc = 0; this.pm = 0; this.pm2 = 0; }
+  block(c, L, R, i0, n) {
+    if (c.on) { this.env = 1; this.envD = decay(.11 + .3 * c.bend); }
+    const bright = (c.tiltX + 1) / 2, idx0 = .6 + 2.6 * c.bend + 2.2 * bright, ta = c.gate ? 1 : 0;
+    for (let i = 0; i < n; i++) {
+      const f = this.step(c, ta, .3 * c.tiltY);
+      this.pc = wrap(this.pc + f / SR); this.pm = wrap(this.pm + f / SR); this.pm2 = wrap(this.pm2 + f * 2 / SR);
+      const idx = idx0 * (.3 + .7 * this.env);
+      const mod = Math.sin(TAU * this.pm) + .35 * this.env * Math.sin(TAU * this.pm2);
+      const y = Math.tanh(Math.sin(TAU * this.pc + idx * mod) * 1.7) * .85;
+      const s = y * this.amp; L[i0 + i] += s; R[i0 + i] += s;
+    }
+  }
+}
+
+// Lead: wide supersaw. Seven detuned saws split left/right, filter, ping-pong echo of 3/16, reverb.
+class SuperLead extends Mel {
+  constructor() {
+    super(.02, .01, .12); this.p = Float32Array.from({ length: 7 }, (_, j) => (j * .618) % 1);
+    this.fl = new SVF(); this.fr = new SVF(); this.dl = new PingPong(BEAT * .75, .38, 3500); this.rv = new Reverb(1.1, .84, .35);
+  }
+  block(c, L, R, i0, n) {
+    if (c.on) { this.env = 1; this.envD = decay(.3); }
+    const bright = (c.tiltX + 1) / 2, cents = 14 + 30 * c.bend, off = [-1, -.66, -.33, 0, .33, .66, 1];
+    const k = 1.1 - .6 * c.bend, ta = c.gate ? .5 + .5 * c.t : 0, side = [1, 0, 1, .5, 0, 1, 0];
+    const rat = off.map(o => 2 ** (o * cents / 1200) / SR);
+    for (let i = 0; i < n; i++) {
+      const f = this.step(c, ta, .5 * c.tiltY);
+      let xl = 0, xr = 0;
+      for (let j = 0; j < 7; j++) {
+        const dt = f * rat[j]; this.p[j] = wrap(this.p[j] + dt);
+        const s = saw(this.p[j], dt); xl += s * (.25 + .75 * side[j]); xr += s * (1 - .75 * side[j]);
+      }
+      if ((i & 15) === 0) { const fc = 400 * 2 ** (bright * 4.5) * (1 + 1.5 * this.env); this.fl.set(fc, k); this.fr.set(fc, k); }
+      const yl = Math.tanh(this.fl.run(xl * .22) * 1.3) * this.amp, yr = Math.tanh(this.fr.run(xr * .22) * 1.3) * this.amp;
+      this.dl.run((yl + yr) * .5); const el = this.dl.oL, er = this.dl.oR;
+      this.rv.run(yl + .5 * el, yr + .5 * er);
+      L[i0 + i] += yl + .32 * el + .3 * this.rv.oL; R[i0 + i] += yr + .32 * er + .3 * this.rv.oR;
+    }
+  }
+}
+
+// Lead: pluck. Saw + square, a fast filter snap and a quick drop to a quieter sustain; dotted-eighth echo.
+class PluckLead extends Mel {
+  constructor() { super(.015, .002, .15); this.p1 = 0; this.p2 = .5; this.f = new SVF(); this.a2 = 0; this.dl = new PingPong(BEAT * .75, .45, 4000); this.rv = new Reverb(1, .8, .4); }
+  block(c, L, R, i0, n) {
+    if (c.on) { this.env = 1; this.envD = decay(.1 + .25 * c.bend); this.a2 = 1; }
+    const bright = (c.tiltX + 1) / 2, base = 250 * 2 ** (bright * 3.5), k = 1.0 - .7 * c.bend, ta = c.gate ? 1 : 0, ad = decay(.25);
+    for (let i = 0; i < n; i++) {
+      const f = this.step(c, ta, .45 * c.tiltY); this.a2 *= ad;
+      const d1 = f / SR, d2 = f * 1.005 / SR; this.p1 = wrap(this.p1 + d1); this.p2 = wrap(this.p2 + d2);
+      if ((i & 7) === 0) this.f.set(base * 2 ** (this.env * 4), k);
+      const y = Math.tanh(this.f.run(.6 * saw(this.p1, d1) + .5 * sqr(this.p2, d2)) * (1.2 + 2 * c.bend)) * this.amp * (.35 + .65 * this.a2);
+      this.dl.run(y); this.rv.run(y + .6 * this.dl.oL, y + .6 * this.dl.oR);
+      L[i0 + i] += y + .38 * this.dl.oL + .25 * this.rv.oL; R[i0 + i] += y + .38 * this.dl.oR + .25 * this.rv.oR;
+    }
+  }
+}
+
+// Lead: voice. A saw through three vowel formants; tilt moves the vowel У-О-А-Э-И, bend opens it toward "А".
+const VOWELS = [[325, 700, 2530], [450, 800, 2830], [800, 1150, 2900], [400, 1600, 2700], [300, 2300, 3000]];
+class VoiceLead extends Mel {
+  constructor() { super(.03, .02, .12); this.p = 0; this.bp = [new SVF(), new SVF(), new SVF()]; this.v = 1; this.line = new Line(.03); this.cp = 0; this.rv = new Reverb(1.2, .85, .3); }
+  block(c, L, R, i0, n) {
+    const bright = (c.tiltX + 1) / 2, tv = clamp(bright * .9 + .4 * c.bend, 0, 1) * 4, ta = c.gate ? .6 + .4 * c.t : 0, vg = glide(.05);
+    for (let i = 0; i < n; i++) {
+      const f = this.step(c, ta, .15 + .5 * c.tiltY), dt = f / SR;
+      this.p = wrap(this.p + dt);
+      this.v += (tv - this.v) * vg;
+      if ((i & 15) === 0) {
+        const a = Math.floor(clamp(this.v, 0, 3.999)), fr = this.v - a;
+        for (let j = 0; j < 3; j++) this.bp[j].set(VOWELS[a][j] * (1 - fr) + VOWELS[a + 1][j] * fr, j === 0 ? .25 : .14);
+      }
+      const x = saw(this.p, dt) + .06 * noise();
+      let y = 0; const gains = [1, .7, .35];
+      for (let j = 0; j < 3; j++) { this.bp[j].run(x); y += this.bp[j].bp * this.bp[j].k * gains[j]; }
+      y = Math.tanh(y * (2 + 2 * c.bend)) * this.amp;
+      this.line.push(y); this.cp = wrap(this.cp + .6 / SR);
+      const ch = this.line.tap(.012 + .004 * Math.sin(TAU * this.cp));
+      this.rv.run(y, ch);
+      L[i0 + i] += y + .3 * this.rv.oL; R[i0 + i] += .6 * y + .5 * ch + .3 * this.rv.oR;
+    }
+  }
+}
+
+// ---- Drum kits: three separate voices (kick, tom/snare, hat), so a hat no longer cuts the kick ----
+const zone = tune => (tune < .3 ? 0 : tune < .7 ? 1 : 2);
+/** Shaker colour from the band held on screen: length → brightness (×0.5…×2), bend → grain (smooth "shh" … sparse rattles). No fingers: as is. */
+class ShakerShape {
+  constructor() { this.env = 0; this.g = 0; this.p = 0; this.fc = 1; this.gd = decay(.003); }
+  set(c) { const held = !!c.held; this.g = held ? c.bend : 0; this.fc = held ? 2 ** ((c.t - .5) * 2) : 1; this.p = 3000 * (60 / 3000) ** this.g / SR; }
+  amp() {
+    if (this.g <= 0) return 1;
+    if (noise() * .5 + .5 < this.p) this.env = .5 + .5 * Math.abs(noise()); else this.env *= this.gd;
+    return (1 - this.g) + this.g * this.env * 2.5;
+  }
+}
+class Kit808 {
+  constructor() {
+    this.k = { p: 0, e: 0, pe: 0, f0: 50, d: 0, cl: 0 }; this.m = { p1: 0, p2: 0, te: 0, td: 0, ne: 0, nd: 0, f: 150, u: 0, s: new SVF() };
+    this.h = { p: new Float32Array(6), e: 0, d: 0, s: new SVF() }; this.m.s.set(1800, .8); this.h.s.set(7500, .7); this.sh = new SVF(); this.sh.set(5000, 1); this.ss = new ShakerShape();
+    this.pd = decay(.028); this.cd = decay(.0025);
+  }
+  hit(tune, vel, bend) {
+    const z = zone(tune);
+    if (z === 0) Object.assign(this.k, { f0: 48 * 2 ** (tune * 1.5), p: 0, e: vel, pe: 1, d: decay(.38 * (1 + 1.5 * bend)), cl: vel });
+    else if (z === 1) { const u = (tune - .3) / .4; Object.assign(this.m, { u, f: 110 * 2 ** (u * 1.3), te: vel, td: decay(.2 * (1 - .5 * u) * (1 + bend)), ne: vel * u * u, nd: decay(.13 + .15 * bend), p1: 0, p2: 0 }); }
+    else Object.assign(this.h, { e: vel, d: decay(.045 + .35 * bend) });
+  }
+  block(c, L, R, i0, n) {
+    const k = this.k, m = this.m, h = this.h, shaker = .35 * c.shake * c.shake, HF = [205.3, 304.4, 369.6, 522.7, 540, 800];
+    // tilt = tone (0 at level), lift = tuning: upright is 3 semitones up
+    const tone = (c.tiltX + 1) / 2 - .5, tf = 2 ** (c.tiltY * 3 / 12), clk = .5 + (c.tiltX + 1) / 2;
+    m.s.set(1800 * 2 ** (tone * 2), .8); h.s.set(7500 * 2 ** (tone * 1.2), .7); this.ss.set(c); this.sh.set(5000 * this.ss.fc, 1);
+    for (let i = 0; i < n; i++) {
+      let l = 0, r = 0;
+      if (k.e > 1e-4) {
+        k.pe *= this.pd; k.p = wrap(k.p + k.f0 * tf * (1 + 4 * k.pe) / SR);
+        const y = Math.tanh((Math.sin(TAU * k.p) * k.e + .4 * clk * noise() * k.cl) * 2.5) * .8; k.e *= k.d; k.cl *= this.cd;
+        l += y; r += y;
+      }
+      if (m.te > 1e-4 || m.ne > 1e-4) {
+        m.p1 = wrap(m.p1 + m.f * tf / SR); m.p2 = wrap(m.p2 + m.f * tf * 1.48 / SR);
+        const tone = (.75 * Math.sin(TAU * m.p1) + .35 * Math.sin(TAU * m.p2)) * m.te;
+        m.s.run(noise()); const nz = (.7 * m.s.hp + .5 * m.s.bp) * m.ne;
+        const y = Math.tanh((tone + nz) * 1.6) * .75; m.te *= m.td; m.ne *= m.nd;
+        const pan = .5 - .35 * (1 - m.u); l += y * (1 - pan) * 1.4; r += y * pan * 1.4;
+      }
+      if (h.e > 1e-4) {
+        let x = 0; for (let j = 0; j < 6; j++) { h.p[j] = wrap(h.p[j] + HF[j] * 1.7 * tf / SR); x += h.p[j] < .5 ? 1 : -1; }
+        h.s.run(x / 6 * .8 + .3 * noise()); const y = h.s.hp * h.e * .6; h.e *= h.d;
+        l += y * .7; r += y * 1.1;
+      }
+      if (shaker > 0) { this.sh.run(noise()); const y = this.sh.hp * shaker * this.ss.amp(); l += y * .6; r += y; }
+      L[i0 + i] += l; R[i0 + i] += r;
+    }
+  }
+}
+// Lo-fi: soft, warm kit through a gentle "old sampler": 12-bit at 24 kHz, two soft low-passes, tape-style saturation, small room.
+class KitLofi {
+  constructor() {
+    this.k = { p: 0, e: 0, pe: 0, d: 0, cl: 0 }; this.m = { p: 0, te: 0, td: 0, ne: 0, nd: 0, f: 185, s: new SVF() }; this.h = { e: 0, d: 0, s: new SVF() };
+    this.m.s.set(2200, 1); this.h.s.set(7000, 1.2); this.sh = new SVF(); this.sh.set(4000, 1.2); this.ss = new ShakerShape();
+    this.pd = decay(.04); this.cd = decay(.004); this.lpA = glide(1 / (TAU * 8000));
+    this.hc = 0; this.hl = 0; this.hr = 0; this.l1 = 0; this.l2 = 0; this.r1 = 0; this.r2 = 0; this.rv = new Reverb(.5, .72, .5);
+  }
+  hit(tune, vel, bend) {
+    const z = zone(tune), v = vel * (.9 + .1 * noise());
+    if (z === 0) Object.assign(this.k, { p: 0, e: v, pe: 1, d: decay(.32 * (1 + bend)), cl: v });
+    else if (z === 1) { const u = (tune - .3) / .4; Object.assign(this.m, { f: 150 * 2 ** (u * .8), te: v * (1 - .3 * u), td: decay(.09 * (1 + bend)), ne: v * (.35 + .65 * u), nd: decay(.16 * (1 + bend)), p: 0 }); }
+    else Object.assign(this.h, { e: v * .7, d: decay(.04 + .25 * bend) });
+  }
+  block(c, L, R, i0, n) {
+    const tone = (c.tiltX + 1) / 2 - .5, tf = 2 ** (c.tiltY * 3 / 12), clk = .5 + (c.tiltX + 1) / 2;
+    const k = this.k, m = this.m, h = this.h, a = glide(1 / (TAU * 8000 * 2 ** (tone * 2))), shaker = .3 * c.shake * c.shake;
+    m.s.set(2200 * 2 ** (tone * 1.4), 1); h.s.set(7000 * 2 ** tone, 1.2); this.ss.set(c); this.sh.set(4000 * this.ss.fc, 1.2);
+    for (let i = 0; i < n; i++) {
+      let x = 0, top = 0;
+      if (k.e > 1e-4) { k.pe *= this.pd; k.p = wrap(k.p + 52 * tf * (1 + 1.5 * k.pe) / SR); x += Math.tanh((Math.sin(TAU * k.p) * k.e + .25 * clk * noise() * k.cl) * 1.3); k.e *= k.d; k.cl *= this.cd; }
+      if (m.te > 1e-4 || m.ne > 1e-4) { m.p = wrap(m.p + m.f * tf / SR); const lp = m.s.run(noise()); x += Math.sin(TAU * m.p) * m.te * .8 + (.9 * m.s.bp + .2 * lp) * m.ne; m.te *= m.td; m.ne *= m.nd; }
+      if (h.e > 1e-4) { h.s.run(noise()); top += h.s.hp * h.e * .5; h.e *= h.d; }
+      if (shaker > 0) { this.sh.run(noise()); top += this.sh.hp * shaker * this.ss.amp(); }
+      const l = x + .8 * top, r = x + 1.1 * top;
+      if (++this.hc >= 2) { this.hc = 0; this.hl = Math.round(l * 2048) / 2048; this.hr = Math.round(r * 2048) / 2048; }
+      this.l1 += (this.hl - this.l1) * a; this.l2 += (this.l1 - this.l2) * a;
+      this.r1 += (this.hr - this.r1) * a; this.r2 += (this.r1 - this.r2) * a;
+      const ol = Math.tanh(this.l2 * 1.4), or = Math.tanh(this.r2 * 1.4);
+      this.rv.run(ol, or);
+      L[i0 + i] += ol + .3 * this.rv.oL; R[i0 + i] += or + .3 * this.rv.oR;
+    }
+  }
+}
+class KitHard {
+  constructor() {
+    this.k = { p: 0, e: 0, pe: 0, d: 0, cl: 0 }; this.m = { t: 1e9, e: 1, tail: .15, u: 0, p: 0, te: 0, td: 0, f: 100, s: new SVF(), v: 0 };
+    this.h = { e: 0, d: 0, p: 0, s: new SVF() }; this.m.s.set(1150, .55); this.h.s.set(8500, .6); this.line = new Line(.02); this.pd = decay(.018); this.cd = decay(.002);
+    this.sh = new SVF(); this.sh.set(6000, 1); this.ss = new ShakerShape();
+  }
+  hit(tune, vel, bend) {
+    const z = zone(tune);
+    if (z === 0) Object.assign(this.k, { p: 0, e: vel, pe: 1, d: decay(.42 * (1 + bend)), cl: vel });
+    else if (z === 1) { const u = (tune - .3) / .4; Object.assign(this.m, { t: 0, u, v: vel, tail: .12 + .2 * bend, f: 95 * 2 ** (u * 1.1), te: vel * (1 - u), td: decay(.22), p: 0 }); }
+    else Object.assign(this.h, { e: vel, d: decay(.03 + .3 * bend) });
+  }
+  block(c, L, R, i0, n) {
+    const k = this.k, m = this.m, h = this.h, b8 = .008 * SR, b2 = .002 * SR, sh = .4 * c.shake * c.shake;
+    const tone = (c.tiltX + 1) / 2 - .5, tf = 2 ** (c.tiltY * 3 / 12), clk = .5 + (c.tiltX + 1) / 2;
+    m.s.set(1150 * 2 ** (tone * 1.6), .55); h.s.set(8500 * 2 ** tone, .6); this.ss.set(c); this.sh.set(6000 * this.ss.fc, 1);
+    for (let i = 0; i < n; i++) {
+      let l = 0, r = 0;
+      if (k.e > 1e-4) {
+        k.pe *= this.pd; k.p = wrap(k.p + 46 * tf * (1 + 7 * k.pe) / SR);
+        const y = Math.tanh((Math.sin(TAU * k.p) * k.e + .5 * clk * k.cl * Math.sin(TAU * k.p * 37)) * 7) * .55; k.e *= k.d; k.cl *= this.cd;
+        l += y; r += y;
+      }
+      let clap = 0;
+      if (m.t < 2 * SR) {
+        const t = m.t++, env = t < 3 * b8 ? Math.exp(-(t % b8) / b2) : Math.exp(-(t - 3 * b8) / (m.tail * SR));
+        m.s.run(noise()); clap = m.s.bp * env * m.v * (.3 + .7 * m.u) * 1.6;
+        m.p = wrap(m.p + m.f * tf * (1 + .5 * m.te) / SR); clap += Math.sin(TAU * m.p) * m.te; m.te *= m.td;
+      }
+      this.line.push(clap); const cd = this.line.tap(.009);
+      l += clap; r += .6 * clap + .5 * cd;
+      if (sh > 0) { this.sh.run(noise()); const y = this.sh.hp * sh * this.ss.amp(); l += y * .8; r += y; }
+      if (h.e > 1e-4) {
+        h.p = wrap(h.p + 3970 * tf / SR); h.s.run(noise() * (h.p < .5 ? 1 : -.4)); const y = h.s.hp * h.e * .55; h.e *= h.d;
+        l += y * .8; r += y;
+      }
+      L[i0 + i] += Math.tanh(l * 1.3); R[i0 + i] += Math.tanh(r * 1.3);
+    }
+  }
+}
+
+// ---- Level matching, master, phone speaker ----
+function rms(L, R) { let s = 0; for (let i = 0; i < L.length; i++) s += L[i] * L[i] + R[i] * R[i]; return Math.sqrt(s / (2 * L.length)); }
+function normalize(st, target = .14) {
+  const g = target / Math.max(rms(st.L, st.R), 1e-6);
+  const lim = x => { x *= g; const a = Math.abs(x); return a < .85 ? x : Math.sign(x) * (.85 + .15 * Math.tanh((a - .85) / .15)); };
+  return { L: st.L.map(lim), R: st.R.map(lim) };
+}
+function kickDuck() { // 0..1 envelope that jumps at each kick, used for the "pumping" master
+  const d = new Float32Array(N), kicks = DRUM_HITS.filter(h => h[0] < 16 && zone(h[1]) === 0).map(h => Math.round(h[0] * BEAT * SR));
+  let e = 0, tgt = 0; const rel = decay(.16), att = glide(.004);
+  for (let pass = 0; pass < 2; pass++) for (let i = 0, ki = 0; i < N; i++) {
+    if (ki < kicks.length && i === kicks[ki]) { tgt = 1; ki++; }
+    e += (tgt - e) * att; if (e > .98) tgt = 0; if (!tgt) e *= rel; if (pass) d[i] = e;
+  }
+  return d;
+}
+function master(bass, drums, lead, juicy) {
+  const L = new Float32Array(N), R = new Float32Array(N);
+  if (!juicy) {
+    for (let i = 0; i < N; i++) { L[i] = Math.tanh(.8 * (bass.L[i] * .9 + drums.L[i] + lead.L[i] * .65)); R[i] = Math.tanh(.8 * (bass.R[i] * .9 + drums.R[i] + lead.R[i] * .65)); }
+    return normalize({ L, R });
+  }
+  const duck = kickDuck(), rv = new Reverb(.7, .75, .45), atk = glide(.008), rel = glide(.15); let env = 0;
+  for (let pass = 0; pass < 2; pass++) for (let i = 0; i < N; i++) {
+    const g = 1 - .45 * duck[i];
+    rv.run(drums.L[i] * .5, drums.R[i] * .5);
+    let l = bass.L[i] * .9 * g + lead.L[i] * .65 * g + drums.L[i] + .22 * rv.oL;
+    let r = bass.R[i] * .9 * g + lead.R[i] * .65 * g + drums.R[i] + .22 * rv.oR;
+    const x = Math.max(Math.abs(l), Math.abs(r)); env += (x - env) * (x > env ? atk : rel);
+    const th = .3, cg = env > th ? (th + (env - th) / 4) / env : 1;
+    if (pass) { L[i] = Math.tanh(l * cg * 1.8); R[i] = Math.tanh(r * cg * 1.8); }
+  }
+  return normalize({ L, R });
+}
+function phoneSpeaker(st) { // mono, nothing under ~250 Hz, soft top: roughly a phone's own speaker
+  const a = new SVF(), b = new SVF(), lp = new SVF(); a.set(260, 1.41); b.set(260, 1.41); lp.set(9000, 1.2);
+  const M = new Float32Array(N);
+  for (let pass = 0; pass < 2; pass++) for (let i = 0; i < N; i++) { a.run((st.L[i] + st.R[i]) * .5); b.run(a.hp); const y = lp.run(b.hp) * 1.6; if (pass) M[i] = y; }
+  return { L: M, R: M };
+}
+
+const SECTIONS = [
+  { id: 'bass', title: 'Бас', phrase: 'ля минор, A1–G2 · 55–98 Гц', ctrl: BASS, variants: [
+    { id: 'cur', name: 'Сейчас', tag: 'в приложении', desc: 'Две пилы и синус октавой ниже через фильтр, без атаки.', gest: 'изгиб → перегруз · наклон → яркость', make: () => new CurVoice('bass') },
+    { id: 'acid', name: 'Кислотный', desc: 'Одна пила через резонансный фильтр. На каждой ноте фильтр резко открывается и «квакает».', gest: 'изгиб → резонанс и длина «ква» · наклон → яркость', make: () => new AcidBass() },
+    { id: 'growl', name: 'Рычащий', desc: 'Три расстроенные пилы с перегрузом, под ними чистый суб, верх разведён в стерео.', gest: 'изгиб → грязь · подъём телефона → «вобл» восьмыми', make: () => new GrowlBass() },
+    { id: 'fm', name: 'Упругий', desc: 'FM-синтез: щелчок на атаке и много середины. Его хорошо слышно даже из динамика телефона.', gest: 'изгиб и наклон → сколько «металла» в атаке', make: () => new FMBass() },
+  ] },
+  { id: 'lead', title: 'Мелодия', phrase: 'E4–A5 · 330–880 Гц', ctrl: LEAD, variants: [
+    { id: 'cur', name: 'Сейчас', tag: 'в приложении', desc: 'Две пилы через фильтр, сухо и в моно.', gest: 'изгиб → резонанс · наклон → яркость · подъём → вибрато', make: () => new CurVoice('lead') },
+    { id: 'super', name: 'Широкий', desc: 'Семь расстроенных пил, разведённых влево и вправо. Эхо на 3/16 такта и зал.', gest: 'изгиб → шире расстройка и резонанс · наклон → яркость', make: () => new SuperLead() },
+    { id: 'pluck', name: 'Щипок', desc: 'Резкий щелчок фильтра в начале каждой ноты, дальше тише. Эхо на точечную восьмую.', gest: 'изгиб → длиннее щелчок и грязь · наклон → яркость', make: () => new PluckLead() },
+    { id: 'voice', name: 'Голос', desc: 'Пила через гласные: наклон ведёт звук «у-о-а-э-и», получается «уа-уа».', gest: 'наклон → гласная · изгиб → ближе к «а» · подъём → вибрато', make: () => new VoiceLead() },
+  ] },
+  { id: 'drums', title: 'Барабаны', phrase: 'бочка · малый · хэт, сбивка на томах, шейкер в 4-м такте (со 2-й доли — с изогнутой резинкой)', ctrl: DRUM_CTRL, hits: DRUM_HITS, variants: [
+    { id: 'cur', name: 'Сейчас', tag: 'в приложении', desc: 'Синус со спадом тона и шум. Один голос: хэт обрывает бочку.', gest: 'где коснулся → бочка/малый/хэт · изгиб → длиннее', make: () => new CurVoice('drums') },
+    { id: '808', name: 'Плотные', desc: 'Электронная классика: бочка с щелчком и перегрузом, малый из тона и шума, металлический хэт.', gest: 'изгиб → бочка длиннее, хэт открывается · наклон → ярче/глуше · подъём → строй выше', make: () => new Kit808() },
+    { id: 'lofi', name: 'Лоу-фай', desc: 'Мягкие и тёплые, как со старого сэмплера: 12 бит, приглушённый верх, плёночное насыщение, маленькая комната.', gest: 'изгиб → длиннее малый и хэт · наклон → ярче/глуше · подъём → строй выше', make: () => new KitLofi() },
+    { id: 'hard', name: 'Жёсткие', desc: 'Перегруженная бочка, хлопок вместо малого, резкий хэт.', gest: 'изгиб → длиннее хвосты · наклон → ярче/глуше · подъём → строй выше', make: () => new KitHard() },
+  ] },
+];
+</script>
+
+<script>
+// ---- UI ----
+const stems = {};      // "bass/acid" → normalized {L,R}
+const picks = { bass: null, lead: null, drums: null };
+let masterJuicy = true, ctx = null, src = null, playing = null, playStart = 0, raf = 0;
+const $ = s => document.querySelector(s);
+const css = getComputedStyle(document.documentElement);
+
+function card(sec, v) {
+  const el = document.createElement('article'); el.className = 'card'; el.dataset.key = sec.id + '/' + v.id;
+  el.innerHTML = `<div class="top"><h3></h3>${v.tag ? `<span class="tag"></span>` : ''}</div><p class="desc"></p><div class="gest"></div>
+    <div class="wave"><canvas></canvas><div class="head"></div><div class="wait">считаю…</div></div>
+    <div class="row"><button class="play" disabled>▶ Слушать</button><button class="pick" aria-pressed="false">Беру этот</button></div>`;
+  el.querySelector('h3').textContent = v.name; if (v.tag) el.querySelector('.tag').textContent = v.tag;
+  el.querySelector('.desc').textContent = v.desc; el.querySelector('.gest').textContent = v.gest;
+  el.querySelector('.play').onclick = () => toggle(el.dataset.key, el.querySelector('.wave'), el.querySelector('.play'));
+  el.querySelector('.pick').onclick = () => { picks[sec.id] = picks[sec.id] === v.id ? null : v.id; renderPicks(); save(); };
+  return el;
+}
+function build() {
+  const root = $('#sections');
+  for (const sec of SECTIONS) {
+    const s = document.createElement('section');
+    s.innerHTML = `<div class="sec-head"><h2></h2><span class="phrase"></span></div><div class="grid"></div>`;
+    s.querySelector('h2').textContent = sec.title; s.querySelector('.phrase').textContent = sec.phrase;
+    sec.variants.forEach(v => s.querySelector('.grid').appendChild(card(sec, v)));
+    root.appendChild(s);
+  }
+}
+function drawWave(wave, st) {
+  const cv = wave.querySelector('canvas'), dpr = devicePixelRatio || 1, w = Math.max(1, cv.clientWidth * dpr), h = Math.max(1, cv.clientHeight * dpr);
+  cv.width = w; cv.height = h; const g = cv.getContext('2d'); g.clearRect(0, 0, w, h);
+  g.fillStyle = css.getPropertyValue('--band').trim(); g.globalAlpha = .85;
+  const step = st.L.length / w;
+  for (let x = 0; x < w; x++) {
+    let mn = 0, mx = 0; const a = Math.floor(x * step), b = Math.floor((x + 1) * step);
+    for (let i = a; i < b; i += 4) { const v = (st.L[i] + st.R[i]) * .5; if (v < mn) mn = v; if (v > mx) mx = v; }
+    g.fillRect(x, h / 2 - mx * h * .55, 1, Math.max(1, (mx - mn) * h * .55));
+  }
+  const wait = wave.querySelector('.wait'); if (wait) wait.remove();
+}
+function renderAll() {
+  const jobs = [];
+  for (const sec of SECTIONS) for (const v of sec.variants) jobs.push([sec, v]);
+  let done = 0;
+  const next = () => {
+    if (!jobs.length) { $('#status').textContent = 'Готово: ' + done + ' вариантов'; updateMix(); return; }
+    const [sec, v] = jobs.shift(), key = sec.id + '/' + v.id;
+    stems[key] = normalize(renderTrack(v.make(), sec.ctrl, sec.hits));
+    const el = document.querySelector(`[data-key="${key}"]`);
+    drawWave(el.querySelector('.wave'), stems[key]); el.querySelector('.play').disabled = false;
+    done++; $('#status').textContent = `Считаю звуки… ${done}/${done + jobs.length}`;
+    setTimeout(next, 0);
+  };
+  setTimeout(next, 30);
+}
+
+const mixCache = {};
+function mixKey() { return ['bass', 'drums', 'lead'].map(s => picks[s] || 'cur').join('+') + (masterJuicy ? ':j' : ':p'); }
+function mixStem() {
+  const k = mixKey();
+  if (!mixCache[k]) mixCache[k] = master(stems['bass/' + (picks.bass || 'cur')], stems['drums/' + (picks.drums || 'cur')], stems['lead/' + (picks.lead || 'cur')], masterJuicy);
+  return mixCache[k];
+}
+function nameOf(secId, id) { const s = SECTIONS.find(x => x.id === secId); return s.variants.find(v => v.id === (id || 'cur')).name; }
+function updateMix() {
+  $('#mixSel').textContent = `бас: ${nameOf('bass', picks.bass)} · барабаны: ${nameOf('drums', picks.drums)} · мелодия: ${nameOf('lead', picks.lead)}`;
+  if (stems['lead/voice']) drawWave($('#mixWave'), mixStem());
+  if (playing === 'mix') { stop(); toggle('mix', $('#mixWave'), $('#mixPlay')); }
+}
+function renderPicks() {
+  document.querySelectorAll('.card').forEach(el => {
+    const [s, id] = el.dataset.key.split('/'), on = picks[s] === id;
+    el.classList.toggle('picked', on); el.querySelector('.pick').setAttribute('aria-pressed', on);
+    el.querySelector('.pick').textContent = on ? '✓ Выбран' : 'Беру этот';
+  });
+  $('#mPlain').setAttribute('aria-pressed', !masterJuicy); $('#mJuicy').setAttribute('aria-pressed', masterJuicy);
+  updateMix();
+}
+
+function stop() {
+  if (src) { try { src.stop(); } catch (e) {} src = null; }
+  cancelAnimationFrame(raf);
+  document.querySelectorAll('.wave.on').forEach(w => w.classList.remove('on'));
+  document.querySelectorAll('button.play.on').forEach(b => { b.classList.remove('on'); b.textContent = b.id === 'mixPlay' ? '▶ Играть луп' : '▶ Слушать'; });
+  playing = null;
+}
+function toggle(key, wave, btn) {
+  if (playing === key) { stop(); return; }
+  stop();
+  ctx = ctx || new (window.AudioContext || window.webkitAudioContext)();
+  ctx.resume && ctx.resume();
+  let st = key === 'mix' ? mixStem() : stems[key];
+  if ($('#phone').checked) st = phoneSpeaker(st);
+  const buf = ctx.createBuffer(2, N, SR); buf.copyToChannel(st.L, 0); buf.copyToChannel(st.R, 1);
+  src = ctx.createBufferSource(); src.buffer = buf; src.loop = true; src.connect(ctx.destination); src.start();
+  playing = key; playStart = ctx.currentTime;
+  btn.classList.add('on'); btn.textContent = '■ Стоп'; wave.classList.add('on');
+  const head = wave.querySelector('.head'), len = N / SR;
+  const tick = () => { head.style.left = (((ctx.currentTime - playStart) % len) / len * 100) + '%'; raf = requestAnimationFrame(tick); };
+  tick();
+}
+
+// ---- Saving the choice where Claude can read it ----
+let db = null, saveTimer = 0, lastSaved = '';
+function setStatus(text, ok) { const s = $('#status'); s.textContent = text; s.classList.toggle('ok', !!ok); }
+function save() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(async () => {
+    const body = { bass: picks.bass, lead: picks.lead, drums: picks.drums, master: masterJuicy ? 'juicy' : 'plain', note: $('#note').value.slice(0, 2000) };
+    const js = JSON.stringify(body); if (js === lastSaved) return;
+    if (!db) { setStatus('Выбор не сохраняется в этом окне. Напиши его в чат.'); return; }
+    try { await db.doc('picks/choice').set(Object.assign({ at: Date.now() }, body)); lastSaved = js; setStatus('Выбор сохранён, Claude его увидит', true); }
+    catch (e) { setStatus('Не сохранилось (' + (e && e.code || 'ошибка') + '). Напиши выбор в чат.'); }
+  }, 500);
+}
+async function connect() {
+  if (!window.claude || !window.claude.use) return;
+  try { db = await window.claude.use('db'); } catch (e) { db = null; }
+  if (!db) return;
+  try {
+    const s = await db.doc('picks/choice').get();
+    if (s.exists) {
+      const d = s.data(); for (const k of ['bass', 'lead', 'drums']) picks[k] = d[k] || null;
+      masterJuicy = d.master !== 'plain'; if (typeof d.note === 'string') $('#note').value = d.note;
+      lastSaved = JSON.stringify({ bass: picks.bass, lead: picks.lead, drums: picks.drums, master: masterJuicy ? 'juicy' : 'plain', note: $('#note').value });
+      renderPicks();
+    }
+  } catch (e) {}
+}
+
+build(); renderPicks(); renderAll(); connect();
+$('#mixPlay').onclick = () => toggle('mix', $('#mixWave'), $('#mixPlay'));
+$('#mPlain').onclick = () => { masterJuicy = false; renderPicks(); save(); };
+$('#mJuicy').onclick = () => { masterJuicy = true; renderPicks(); save(); };
+$('#note').addEventListener('input', save);
+$('#phone').onchange = () => { if (playing) { const k = playing; const el = k === 'mix' ? null : document.querySelector(`[data-key="${k}"]`); stop(); toggle(k, el ? el.querySelector('.wave') : $('#mixWave'), el ? el.querySelector('.play') : $('#mixPlay')); } };
+</script>

@@ -67,6 +67,8 @@ final class Engine {
     let bend = AtomicFloat()
     let gate = AtomicBool()
     let tiltX = AtomicFloat()
+    /// Extra tilt from where the band points (BandView); added to `tiltX` in the frame, so it is recorded.
+    let aim = AtomicFloat()
     let tiltY = AtomicFloat()
     let shake = AtomicFloat()
     /// Band shape: count, then x,y pairs, 0...1 (`Frame.count` layout). Writer stores points before the count.
@@ -119,7 +121,11 @@ final class Engine {
     private let liveVoice: Voice
     private let voices: [Voice]
     private let live: UnsafeMutablePointer<Float>
-    private let mix: UnsafeMutablePointer<Float>
+    /// Bus buffers for one block: melodic voices, drums, and the master's stereo output.
+    private let toneL: UnsafeMutablePointer<Float>, toneR: UnsafeMutablePointer<Float>
+    private let drumL: UnsafeMutablePointer<Float>, drumR: UnsafeMutablePointer<Float>
+    private let mixL: UnsafeMutablePointer<Float>, mixR: UnsafeMutablePointer<Float>
+    private let master: Master
     private let cmd: UnsafeMutablePointer<Float>
     private var mixPos = Engine.block
     private let click: Click
@@ -137,8 +143,13 @@ final class Engine {
         voices = tracks.map { _ in Voice(sampleRate: sr) }
         live = .allocate(capacity: Frame.size)
         live.initialize(repeating: 0, count: Frame.size)
-        mix = .allocate(capacity: Engine.block)
-        mix.initialize(repeating: 0, count: Engine.block)
+        func buffer() -> UnsafeMutablePointer<Float> {
+            let b = UnsafeMutablePointer<Float>.allocate(capacity: Engine.block)
+            b.initialize(repeating: 0, count: Engine.block)
+            return b
+        }
+        toneL = buffer(); toneR = buffer(); drumL = buffer(); drumR = buffer(); mixL = buffer(); mixR = buffer()
+        master = Master(sr)
         cmd = .allocate(capacity: commands.width)
         click = Click(sr: sr)
 
@@ -232,14 +243,13 @@ final class Engine {
 
     private func makeAudioEngine() -> AVAudioEngine {
         let engine = AVAudioEngine()
-        let format = AVAudioFormat(standardFormatWithSampleRate: Engine.sampleRate, channels: 1)!
+        // standard format = non-interleaved: buffers[0] is left, buffers[1] right
+        let format = AVAudioFormat(standardFormatWithSampleRate: Engine.sampleRate, channels: 2)!
         let node = AVAudioSourceNode(format: format) { [unowned self] _, _, frameCount, abl in
             let buffers = UnsafeMutableAudioBufferListPointer(abl)
-            guard let data = buffers[0].mData else { return noErr }
-            self.render(data.assumingMemoryBound(to: Float.self), Int(frameCount))
-            for b in 1..<max(buffers.count, 1) {
-                buffers[b].mData?.copyMemory(from: data, byteCount: Int(frameCount) * 4)
-            }
+            guard let l = buffers[0].mData else { return noErr }
+            let r = buffers.count > 1 ? buffers[1].mData : nil
+            self.render(l.assumingMemoryBound(to: Float.self), r?.assumingMemoryBound(to: Float.self), Int(frameCount))
             return noErr
         }
         engine.attach(node)
@@ -250,7 +260,7 @@ final class Engine {
     // MARK: audio thread
 
     /// Render callback: serves any buffer size from whole 192-sample blocks.
-    private func render(_ out: UnsafeMutablePointer<Float>, _ count: Int) {
+    private func render(_ outL: UnsafeMutablePointer<Float>, _ outR: UnsafeMutablePointer<Float>?, _ count: Int) {
         var n = 0
         while n < count {
             if mixPos == Engine.block {
@@ -258,7 +268,8 @@ final class Engine {
                 mixPos = 0
             }
             let k = min(Engine.block - mixPos, count - n)
-            (out + n).update(from: mix + mixPos, count: k)
+            (outL + n).update(from: mixL + mixPos, count: k)
+            outR.map { ($0 + n).update(from: mixR + mixPos, count: k) }
             mixPos += k
             n += k
         }
@@ -275,15 +286,20 @@ final class Engine {
         live[Frame.tension] = tension.value
         live[Frame.bend] = bend.value
         live[Frame.gate] = gate.value ? 1 : 0
-        live[Frame.tiltX] = tiltX.value
+        live[Frame.tiltX] = min(max(tiltX.value + aim.value, -1), 1)
         live[Frame.tiltY] = tiltY.value
         live[Frame.shake] = shake.value
         for i in 0..<Frame.shapeSize { live[Frame.count + i] = shape[i].value }
         live[Frame.event] = Frame.evNone
         _ = events.pop(into: live + Frame.event)
 
-        mix.update(repeating: 0, count: Engine.block)
-        liveVoice.render(mix, Engine.block, live, tracks[selected.value].mode)
+        toneL.update(repeating: 0, count: Engine.block) // no array literal here: the render thread must not allocate
+        toneR.update(repeating: 0, count: Engine.block)
+        drumL.update(repeating: 0, count: Engine.block)
+        drumR.update(repeating: 0, count: Engine.block)
+        let tempo = bpm.value
+        var kicked = liveVoice.render(toneL: toneL, toneR: toneR, drumL: drumL, drumR: drumR, Engine.block,
+                                      live, tracks[selected.value].mode, bpm: tempo)
 
         let writeAt = (loopLen.value == 0 ? recCount.value : pos.value) * Frame.size
         for i in 0..<tracks.count {
@@ -295,7 +311,10 @@ final class Engine {
                 let f = t.frames + pos.value * Frame.size
                 let muted = t.muted.value
                 t.level.value = muted ? 0 : levelOf(f)
-                if !muted { voices[i].render(mix, Engine.block, f, t.mode) }
+                if !muted && voices[i].render(toneL: toneL, toneR: toneR, drumL: drumL, drumR: drumR, Engine.block,
+                                              f, t.mode, bpm: tempo) {
+                    kicked = true
+                }
             } else {
                 t.level.value = 0
             }
@@ -309,7 +328,9 @@ final class Engine {
         } else if metronome.value && loopLen.value > 0 {
             click.tick(from: pos.value * Engine.block, beat: Float(loopLen.value) * Float(Engine.block) / Float(loopBeats.value))
         }
-        click.render(mix, Engine.block)
+        master.render(toneL: toneL, toneR: toneR, drumL: drumL, drumR: drumR, Engine.block, kicked: kicked,
+                      outL: mixL, outR: mixR)
+        click.render(mixL, mixR, Engine.block)
 
         if loopLen.value > 0 { pos.value = (pos.value + 1) % loopLen.value }
         for t in tracks where t.recording.value {
@@ -319,7 +340,6 @@ final class Engine {
             break
         }
 
-        for i in 0..<Engine.block { mix[i] = tanhf(mix[i] * 0.8) }
     }
 
     private func apply() {
@@ -444,16 +464,19 @@ final class Engine {
             }
         }
 
-        func render(_ out: UnsafeMutablePointer<Float>, _ count: Int) {
+        /// Adds the click into both channels, after the master.
+        func render(_ outL: UnsafeMutablePointer<Float>, _ outR: UnsafeMutablePointer<Float>, _ count: Int) {
             for i in 0..<count {
                 if i == startIn {
-                    env = 0.5
+                    env = 0.35
                     phase = 0
                     startIn = -1
                 }
                 if env < 1e-4 { continue }
                 phase += freq / sr
-                out[i] += sinf(2 * Float.pi * phase) * env
+                let s = sinf(2 * Float.pi * phase) * env
+                outL[i] += s
+                outR[i] += s
                 env *= decay
             }
             startIn = -1
