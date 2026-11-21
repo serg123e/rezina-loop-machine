@@ -1,0 +1,152 @@
+#!/usr/bin/env python3
+"""TestFlight release in one command (adapted from CamJamProbe bin/release).
+
+    make release            # = bin/release
+    make release DRY=1      # checks only
+
+Version: MARKETING_VERSION in project.yml; "What to Test": its section in store/whatsnew.md. Checks first,
+then: build on GitHub (ios.yml, upload=true) → wait for Apple's processing → "What to Test" → access for
+internal groups → git tag ios-v<version> (not v<version>: v* tags release the Android APK). Re-running after
+a failure resumes: a build of this version uploaded after the last commit is not built again.
+"""
+import datetime, json, os, pathlib, re, subprocess, sys, time
+
+IOS = pathlib.Path(__file__).resolve().parent.parent
+BUNDLE_ID = "it.automate123.rezina"
+RUNNER = os.environ.get("IOS_RUNNER", "macos-15")
+
+
+def sh(cmd):
+    print("$", cmd)
+    subprocess.run(cmd, shell=True, cwd=IOS, check=True, text=True)
+
+
+def out(cmd):
+    return subprocess.run(cmd, shell=True, cwd=IOS, check=True, text=True, capture_output=True).stdout.strip()
+
+
+def fail(msg):
+    sys.exit(f"\n✗ {msg}")
+
+
+def asc(*args):
+    """bin/asc: GET <path> | METHOD <path> <json> → dict (empty answer — {})."""
+    r = subprocess.run([str(IOS / "bin" / "asc"), *args], capture_output=True, text=True)
+    if r.returncode:
+        fail(f"App Store Connect: {' '.join(args[:2])}\n{r.stderr.strip()}")
+    return json.loads(r.stdout) if r.stdout.strip().startswith("{") else {}
+
+
+def app_id():
+    apps = asc(f"/v1/apps?filter[bundleId]={BUNDLE_ID}")["data"]
+    if not apps:
+        fail(f"no app with bundle id {BUNDLE_ID} in App Store Connect — create it in the web UI first (ios/CLAUDE.md)")
+    return apps[0]["id"]
+
+
+def version():
+    m = re.search(r'MARKETING_VERSION:\s*"([^"]+)"', (IOS / "project.yml").read_text())
+    if not m:
+        fail("no MARKETING_VERSION in project.yml")
+    return m.group(1)
+
+
+def whatsnew(ver):
+    text = (IOS / "store" / "whatsnew.md").read_text()
+    m = re.search(rf"^## {re.escape(ver)}\n(.*?)(?=^## |\Z)", text, re.S | re.M)
+    if not m or not m.group(1).strip():
+        fail(f"no '## {ver}' section in store/whatsnew.md — write what is new")
+    notes = m.group(1).strip()
+    if len(notes) > 4000:
+        fail(f"store/whatsnew.md, {ver}: {len(notes)} characters, TestFlight takes up to 4000")
+    # App Store Connect rejects characters outside the BMP (emoji) with 409 INVALID_TEXT, after the build
+    wide = sorted({c for c in notes if ord(c) > 0xFFFF})
+    if wide:
+        fail(f"store/whatsnew.md, {ver}: emoji {''.join(wide)} — TestFlight does not take them")
+    return notes
+
+
+def preflight(ver):
+    print(f"── checks: version {ver}")
+    if out("git status --porcelain"):
+        fail("uncommitted changes — TestFlight gets only what is in git")
+    branch = out("git branch --show-current")
+    sh(f"git fetch -q origin {branch}")
+    if out("git rev-parse HEAD") != out(f"git rev-parse origin/{branch}"):
+        fail(f"{branch} differs from origin/{branch} — git push (GitHub builds the pushed branch)")
+    if out(f"git tag -l ios-v{ver}"):
+        fail(f"ios-v{ver} is already released — bump MARKETING_VERSION in project.yml")
+    notes = whatsnew(ver)
+    sh("make build")  # Linux compile check (xtool) before spending a macOS run
+    print("✓ checks passed")
+    return notes, branch
+
+
+def find_build(app, ver, since):
+    q = (f"/v1/builds?filter[app]={app}&filter[preReleaseVersion.version]={ver}"
+         "&filter[processingState]=VALID&sort=-uploadedDate&limit=5&fields[builds]=version,uploadedDate")
+    for b in asc(q)["data"]:
+        if datetime.datetime.fromisoformat(b["attributes"]["uploadedDate"]).timestamp() >= since - 60:
+            return b
+    return None
+
+
+def build(app, ver, branch):
+    head = int(out("git log -1 --format=%ct"))
+    b = find_build(app, ver, head)
+    if b:
+        print(f"✓ build {b['attributes']['version']} was already uploaded after the last commit — not building")
+        return b
+    started = time.time()
+    sh(f"gh workflow run ios.yml --ref {branch} -f runner={RUNNER} -f upload=true")
+    time.sleep(8)
+    run = out("gh run list --workflow ios.yml -L1 --json databaseId -q '.[0].databaseId'")
+    sh(f"gh run watch {run} --exit-status --interval 30 >/dev/null")
+    print("… waiting for Apple to process the build")
+    for _ in range(60):
+        b = find_build(app, ver, started)
+        if b:
+            return b
+        time.sleep(30)
+    fail("the build did not show up in App Store Connect in 30 minutes — check the mail from Apple")
+
+
+def what_to_test(b, notes):
+    locs = asc(f"/v1/builds/{b['id']}/betaBuildLocalizations")["data"]
+    loc = next((l for l in locs if l["attributes"]["locale"] == "en-US"), None)
+    if loc:
+        asc("PATCH", f"/v1/betaBuildLocalizations/{loc['id']}", json.dumps({"data": {
+            "type": "betaBuildLocalizations", "id": loc["id"], "attributes": {"whatsNew": notes}}}))
+    else:
+        asc("POST", "/v1/betaBuildLocalizations", json.dumps({"data": {"type": "betaBuildLocalizations",
+            "attributes": {"locale": "en-US", "whatsNew": notes},
+            "relationships": {"build": {"data": {"type": "builds", "id": b["id"]}}}}}))
+    print("✓ What to Test")
+
+
+def testers(app, b):
+    """Internal groups without "all builds" get this build explicitly; external ones only via Apple's review."""
+    for g in asc(f"/v1/apps/{app}/betaGroups")["data"]:
+        a = g["attributes"]
+        if a["isInternalGroup"] and not a.get("hasAccessToAllBuilds"):
+            asc("POST", f"/v1/betaGroups/{g['id']}/relationships/builds",
+                json.dumps({"data": [{"type": "builds", "id": b["id"]}]}))
+        if a["isInternalGroup"]:
+            print(f"✓ group '{a['name']}'")
+
+
+def main():
+    ver = version()
+    app = app_id()
+    notes, branch = preflight(ver)
+    if os.environ.get("DRY"):
+        return
+    b = build(app, ver, branch)
+    what_to_test(b, notes)
+    testers(app, b)
+    sh(f"git tag ios-v{ver} && git push -q origin ios-v{ver}")
+    print(f"\n✓ {ver} (build {b['attributes']['version']}) is in TestFlight for internal testers.")
+
+
+if __name__ == "__main__":
+    main()

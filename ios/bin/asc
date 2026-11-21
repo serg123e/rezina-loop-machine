@@ -1,0 +1,30 @@
+#!/usr/bin/env python3
+"""App Store Connect API request with the key in ~/.appstoreconnect (copy of CamJamProbe bin/asc; never commit the key).
+
+bin/asc /v1/apps                       — GET
+bin/asc POST /v1/betaGroups '<json>'   — POST/PATCH/DELETE with a body
+"""
+import json, sys, time, urllib.error, urllib.request
+from pathlib import Path
+import jwt
+
+KEY_ID = "922J6W9LW2"
+home = Path.home() / ".appstoreconnect"
+issuer = (home / "issuer-id").read_text().strip()
+pem = (home / "private_keys" / f"AuthKey_{KEY_ID}.p8").read_text()
+now = int(time.time())
+token = jwt.encode({"iss": issuer, "iat": now, "exp": now + 600, "aud": "appstoreconnect-v1"},
+                   pem, algorithm="ES256", headers={"kid": KEY_ID})
+
+args = sys.argv[1:]
+method = args.pop(0) if args[0] in ("GET", "POST", "PATCH", "DELETE") else "GET"
+path, body = args[0], (args[1].encode() if len(args) > 1 else None)
+req = urllib.request.Request("https://api.appstoreconnect.apple.com" + path, data=body, method=method,
+                             headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"})
+try:
+    with urllib.request.urlopen(req) as r:
+        raw = r.read()
+        print(json.dumps(json.loads(raw), indent=1, ensure_ascii=False) if raw else f"{r.status} OK")
+except urllib.error.HTTPError as e:
+    print(e.code, e.read().decode(), file=sys.stderr)
+    sys.exit(1)

@@ -2,7 +2,12 @@
 
 This is an Android app. You stretch and bend a band on the screen with your fingers, and tilt and shake the phone, to change the sound. It also has a 4-track looper: record a bass line, then drums over it, then a melody, all on the same instrument in different modes.
 
-There are no libraries. The synth runs on `AudioTrack`, and the whole screen is one custom `View`. The README is the user-facing page and has the screenshots.
+There are no libraries. The synth runs on `AudioTrack` (stereo float), and the whole screen is one custom `View`. The README is the user-facing page and has the screenshots.
+
+**Ports.** There are two copies of this app, with the same behaviour and session format. When you change a rule in the Kotlin code, port it to both.
+
+- **iPhone:** `ios/` is a native Swift copy. Build and release: [`ios/CLAUDE.md`](ios/CLAUDE.md).
+- **Browser:** `web/` is a JavaScript copy (AudioWorklet, canvas, installable), deployed to GitHub Pages. Details: [`web/CLAUDE.md`](web/CLAUDE.md).
 
 ## Build and run
 
@@ -54,12 +59,12 @@ rsvg-convert -w 512 -h 512 store/icon.svg -o store/icon-512.png
 
 | Input | Synth parameter | Sound |
 |---|---|---|
-| Band length (path through all fingers) | `tension` | Pitch and loudness. The range depends on the mode (`Mode.freq`). |
-| Band curvature (path length against the distance between the ends) | `bend` | Drive and filter resonance |
-| Tilt left/right | `tiltX` | Brightness (filter cutoff) |
-| Lift from flat to upright | `tiltY` | Vibrato depth |
-| Shake | `shake` | Pitch and volume wobble; brighter |
-| New finger in Drums mode | `hit()` | A hit: kick near the peg, snare further out, hat far away |
+| Band length (path through all fingers) | `tension` | Pitch. The range depends on the mode (`Mode.freq`). |
+| Band curvature (path length against the distance between the ends) | `bend` | Drive and filter resonance; a longer "pluck" on Lead, a longer kick and open hat on Drums |
+| Tilt left/right, **or play left/right of centre** | `tiltX` | Brightness: the filter on bass and lead (the vowel on Voice lead); on drums the snare/hat noise and the kick's click. The band's angle from the peg (far end, off straight up) adds to the phone's tilt: 45° = half a full tilt (`BandView.aim` → `Engine.aim`, summed into the frame's `TILT_X`, so recordings keep it). |
+| Lift from flat to upright | `tiltY` | Vibrato on Lead; on Growl bass the last stretch to upright (0.8–1) wobbles the filter in eighths; on drums it tunes the kit up, +3 semitones when upright (`DrumColour`) |
+| Shake | `shake` | Pitch wobble; a shaker in Drums mode. While fingers hold a band, its length sets the shaker's brightness and its bend the grain, smooth "shh" … sparse rattles (`ShakerShape`) |
+| New finger (drums: by its own distance from the peg, even with other fingers down) | gate rises | Lead and Bass: the filter snaps open and falls back. Drums: a hit — kick near the peg, tom/snare further out, hat far away |
 
 **Band shape**
 
@@ -75,6 +80,31 @@ rsvg-convert -w 512 -h 512 store/icon.svg -o store/icon-512.png
   - the note that is sounding is lit.
 - In Drums mode the grid shows three zones instead: kick, tom/snare, hat.
 - The rings do not apply with 2 or more fingers.
+
+## Sound
+
+Each track plays one of nine sounds (`Mode`), three per family (`Kind`: bass, drums, lead). The **Sound** button (it shows the sound's name, e.g. "Acid bass ▸") cycles through them: basses, then drums, then leads.
+
+| Mode | Kind | Instrument (`Synth.kt`) | In short |
+|---|---|---|---|
+| `BASS` "Growl bass" | bass | `GrowlBass` | 3 detuned saws → drive → resonant low-pass; clean sub; top widened; wobble when held upright |
+| `ACID_BASS` "Acid bass" | bass | `AcidBass` | 1 saw, resonant filter that "quacks" on every touch |
+| `FM_BASS` "FM bass" | bass | `FmBass` | self-modulated sine: a bark on the attack, carries on phone speakers |
+| `DRUMS` "808 drums" | drums | `Kit808` | kick with click and drive, two-tone snare, metallic hat |
+| `HARD_DRUMS` "Hard drums" | drums | `KitHard` | driven kick, hand clap, sharp hat |
+| `LOFI_DRUMS` "Lo-fi drums" | drums | `KitLofi` | soft kit through a 12-bit/24 kHz "sampler", low-pass, tape saturation, room |
+| `LEAD` "Pluck lead" | lead | `PluckLead` | filter snap per touch, dotted-eighth echo |
+| `WIDE_LEAD` "Wide lead" | lead | `WideLead` | 7-saw stereo supersaw, 3/16 echo, hall |
+| `VOICE_LEAD` "Voice lead" | lead | `VoiceLead` | vowel formants: tilt sweeps U-O-A-E-I |
+
+`Master`: bass and lead duck under each kick ("pumping"), room on drums, bus compressor, tanh.
+
+- **Session files store the mode's ordinal.** Only append to `Mode`; the first three are what old files called Bass / Drums / Lead.
+- **The sounds were picked by ear on [`docs/sound-lab.html`](docs/sound-lab.html)** (published as the "Звуки Rezina" artifact). Its JavaScript is the reference; `Synth.kt`, `ios/…/Synth.swift` and `web/synth.js` are line-by-line ports. To change a sound, change it on the page first (open the file in a browser and listen), then port the same lines to Kotlin, Swift and `web/`.
+- **`Mode.gain`** levels the instruments as on the page: 0.14 / the variant's RMS on the page's phrase × 0.9 (bass), 1 (drums), 0.65 (lead) × 1.5.
+- **`VoiceTest`** (`./gradlew --offline testDebugUnitTest`) renders a fixed gesture in every mode and checks the RMS against numbers from the page's JavaScript. If it fails, the port no longer sounds like what was chosen. The same check runs for iOS (`make soundcheck`) and the browser (`cd web && npm test`).
+- On the page the drum zones are 0.3/0.7; in the app they are 0.33/0.66, as on the screen grid.
+- Every `Voice` holds all nine instruments; inactive ones get a closed gate, ring out and sleep, so they cost nothing.
 
 ## Looper
 
@@ -117,7 +147,7 @@ rsvg-convert -w 512 -h 512 store/icon.svg -o store/icon-512.png
 | **Rec** | Record the selected track |
 | **−** / **+** | Tempo, before the first loop only |
 | **♩** | Metronome on/off |
-| **Sound** | Change the selected track's mode |
+| **Sound** (shows the sound's name) | Change the selected track's sound, one of nine |
 | **Save** / **Open…** | Sessions |
 
 ## Audio latency
@@ -135,10 +165,11 @@ The README screenshots come from the emulator: AVD `Phone_API_36`, unlocked with
 
 ## Files
 
-- `Engine.kt`: the audio thread and the looper. The UI and the sensors write only `@Volatile` fields. Everything that changes looper state goes through a command queue, so only the audio thread changes it.
-- `Voice.kt`: synthesizes one voice from a `Frame` (tone plus drum). Audio thread only.
+- `Engine.kt`: the audio thread and the looper. Voices write into two stereo buses (melodic, drums); `Master` mixes them. The UI and the sensors write only `@Volatile` fields. Everything that changes looper state goes through a command queue, so only the audio thread changes it.
+- `Voice.kt`: one track's sound: routes a `Frame` to the instrument of the track's mode. Audio thread only.
+- `Synth.kt`: one instrument per `Mode`, the `Master` bus and the DSP parts (filter, echo, reverb, delay line).
 - `Sessions.kt`: saving and loading session files.
-- `Mode.kt`: the modes (Bass / Drums / Lead) and the `Frame` layout.
+- `Mode.kt`: the nine sounds (`Mode`), their families (`Kind`: pitch range, drum zones) and the `Frame` layout.
 - `BandView.kt`: touches → band shape → `tension`/`bend`; the looper panel; drawing.
 - `tools/aab`, `tools/play`, `tools/play_api.py`: the Google Play bundle and Play Developer API (a copy of Skeeto's helpers).
 - `MainActivity.kt`: the accelerometer. A low-pass filter splits its signal into tilt (gravity) and shake.

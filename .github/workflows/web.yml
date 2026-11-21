@@ -1,0 +1,49 @@
+# Browser version (web/): tests on every push that touches it; publishes to GitHub Pages from main,
+# or from any branch by hand: gh workflow run web.yml --ref <branch>
+name: web
+
+on:
+  push:
+    paths: ['web/**', '.github/workflows/web.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: web-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm test
+        working-directory: web
+
+  deploy:
+    needs: test
+    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Stamp the offline cache with the commit, drop the tests
+        run: |
+          sed -i "s/const VERSION = 'dev'/const VERSION = '${GITHUB_SHA::12}'/" web/sw.js
+          grep -q "${GITHUB_SHA::12}" web/sw.js
+          rm -rf web/test web/package.json
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: web
+      - id: deploy
+        uses: actions/deploy-pages@v4

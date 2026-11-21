@@ -1,0 +1,7 @@
+{
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node test/soundcheck.mjs && node test/looper.mjs && node test/sessions.mjs"
+  }
+}

@@ -4,20 +4,53 @@ import kotlin.math.log2
 import kotlin.math.pow
 
 /**
- * What the band sounds like on a track. Same gestures, different instrument.
- * Stretch 0..1 maps to [octaves] octaves up from [base] Hz, exponentially like a real string.
+ * Which instrument family a [Mode] belongs to: its pitch range and how the screen behaves (drums show
+ * hit zones instead of note rings). Stretch 0..1 maps to [octaves] octaves up from [base] Hz,
+ * exponentially like a real string.
  */
-enum class Mode(val title: String, private val base: Float, private val octaves: Float) {
-    BASS("Bass", 27.5f, 3.5f), // A0 … ~310 Hz
-    DRUMS("Drums", 45f, 3f), // drum body: kick … high tom
-    LEAD("Lead", 110f, 4f); // A2 … A6
+enum class Kind(private val base: Float, private val octaves: Float) {
+    BASS(27.5f, 3.5f), // A0 … ~310 Hz
+    DRUMS(45f, 3f), // drum body: kick … high tom
+    LEAD(110f, 4f); // A2 … A6
 
     fun freq(tension: Float): Float = base * 2f.pow(tension * octaves)
 
     /** Inverse of [freq]: how far to stretch for [freq] Hz. */
     fun tension(freq: Float): Float = log2(freq / base) / octaves
+}
 
-    fun next(): Mode = entries[(ordinal + 1) % entries.size]
+/**
+ * What the band sounds like on a track. Same gestures, different instrument ([Synth.kt]).
+ * The ordinal is stored in session files: only ever APPEND entries. The first three are the sounds
+ * old files were saved with as plain Bass / Drums / Lead.
+ *
+ * [gain] matches the instruments in loudness, as on the comparison page (docs/sound-lab.html):
+ * 0.14 / the variant's RMS there × 0.9 (bass), 1 (drums) or 0.65 (lead) × 1.5.
+ */
+/** [short] fits a track cell; [title] goes on the Sound button and in the readout. */
+enum class Mode(val title: String, val short: String, val kind: Kind, val gain: Float) {
+    BASS("Growl bass", "Growl", Kind.BASS, 0.323f),
+    DRUMS("808 drums", "808", Kind.DRUMS, 0.47f),
+    LEAD("Pluck lead", "Pluck", Kind.LEAD, 0.357f),
+    ACID_BASS("Acid bass", "Acid", Kind.BASS, 0.521f),
+    FM_BASS("FM bass", "FM", Kind.BASS, 0.391f),
+    HARD_DRUMS("Hard drums", "Hard", Kind.DRUMS, 0.415f),
+    LOFI_DRUMS("Lo-fi drums", "Lo-fi", Kind.DRUMS, 0.364f),
+    WIDE_LEAD("Wide lead", "Wide", Kind.LEAD, 0.581f),
+    VOICE_LEAD("Voice lead", "Voice", Kind.LEAD, 0.331f);
+
+    val drums get() = kind == Kind.DRUMS
+
+    fun freq(tension: Float): Float = kind.freq(tension)
+
+    fun tension(freq: Float): Float = kind.tension(freq)
+
+    /** The Sound button: through the basses, then the drums, then the leads. */
+    fun next(): Mode = ORDER[(ORDER.indexOf(this) + 1) % ORDER.size]
+
+    private companion object {
+        val ORDER = listOf(BASS, ACID_BASS, FM_BASS, DRUMS, HARD_DRUMS, LOFI_DRUMS, LEAD, WIDE_LEAD, VOICE_LEAD)
+    }
 }
 
 /**
