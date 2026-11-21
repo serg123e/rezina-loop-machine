@@ -1,5 +1,6 @@
 # iOS app (ios/): build on a GitHub macOS runner. The repo is public, so macOS minutes are free.
 # - push / pull request touching ios/: unsigned archive — a compile check with the real Xcode.
+# - manual run with adhoc=true: signs ad hoc for the iPhones registered in the team → Rezina.ipa artifact.
 # - manual run with upload=true (`make testflight` / `make release` in ios/): signs with the
 #   App Store Connect API key (secrets ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_P8) and uploads to TestFlight.
 name: ios
@@ -15,6 +16,10 @@ on:
         default: macos-15
       upload:
         description: "Sign and upload to TestFlight"
+        type: boolean
+        default: false
+      adhoc:
+        description: "Sign ad hoc for registered iPhones → Rezina.ipa artifact"
         type: boolean
         default: false
 
@@ -56,7 +61,7 @@ jobs:
             -c 'Print :CFBundleShortVersionString' -c 'Print :CFBundleVersion' "$APP/Info.plist"
 
       - name: API key
-        if: inputs.upload
+        if: inputs.upload || inputs.adhoc
         env:
           KEY_P8: ${{ secrets.ASC_KEY_P8 }}
         run: |
@@ -70,6 +75,20 @@ jobs:
         run: |
           xcodebuild -exportArchive -archivePath build/Rezina.xcarchive \
             -exportOptionsPlist ExportOptions.plist -exportPath build/export $AUTH
+
+      - name: Sign ad hoc
+        if: inputs.adhoc
+        run: |
+          xcodebuild -exportArchive -archivePath build/Rezina.xcarchive \
+            -exportOptionsPlist ExportOptions-adhoc.plist -exportPath build/adhoc $AUTH
+          ls -la build/adhoc
+
+      - uses: actions/upload-artifact@v4
+        if: inputs.adhoc
+        with:
+          name: Rezina-adhoc
+          path: ios/build/adhoc/*.ipa
+          retention-days: 14
 
       - name: Remove key
         if: always()
