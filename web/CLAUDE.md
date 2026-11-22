@@ -78,8 +78,11 @@ gh workflow run web.yml --ref <branch>
 
 - The text readout (sound, stretch, tilt) sits on a see-through plate, and the note grid runs under it up to the panel. Android starts the grid below the text. Ring names that would fall under the plate are not drawn (`plate()`, `labelRing`).
 
-## Not tested
+## Tested on devices (2026-11-22)
 
 - Checked in headless Chromium and WebKit on Linux: touch, mouse, record, loop, save, reload, open, no console errors.
 - CPU per voice is ~2.5–3.5 % of a desktop core (`synth.js` in Node), about 1.5× the Kotlin cost.
-- Never run on a real phone: latency, CPU on mid-range Android, iOS motion signs and permission, the silent switch, wake lock.
+- **Android Chrome:** plays fine; latency `3+24+4` ms.
+- **New iPhone Safari:** plays fine; latency `2.7+10.1+4.0` ms. Tilt and shake work after the `touchend` permission, so the iOS sign flip (`IOS_SIGNS`) is right.
+- **Old iPhone, iOS 15 Safari:** works after the `roundPath` fix; latency `2.7+?+4.0`. **Growl bass crackles there.** Not yet known if it is CPU (check `cpu` with `?debug=1`) or the small speaker.
+- Not checked: the silent switch, the wake lock, CPU on a mid-range Android with several tracks.
