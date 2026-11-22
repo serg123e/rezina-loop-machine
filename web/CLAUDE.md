@@ -33,7 +33,7 @@ gh workflow run web.yml --ref <branch>
 
 - That domain does not redirect http to https, so `index.html` does it: without https there is no AudioWorklet and no sensors.
 - **Cloudflare keeps `.js` for 4 hours** (`max-age=14400`, edge cache). The page itself is not cached there (10 minutes in the browser). So the deploy writes the commit into every script URL: `app.js?v=<commit>` in `index.html`, and the same for each `import` and `addModule`. A new page pulls new scripts, and old copies are never mixed in.
-  - Keep imports as plain `'./name.js'` strings: the deploy finds them with a regex (`web.yml`). A new `.js` file must be added to that regex.
+  - Keep imports as plain `'./name.js'` strings: the deploy finds them with a regex (`web.yml`: app, synth, sessions, worklet, soundcheck). A new `.js` file must be added to that regex.
   - On 2026-11-22 phones kept running the old `app.js` for hours before this was in place.
 - The deploy writes the commit into `sw.js` (`VERSION`), so each deploy gets a fresh offline cache. Offline lookups ignore `?v=`.
 - The service worker fetches from the network first, so an online visit always gets the latest files.
@@ -74,7 +74,8 @@ gh workflow run web.yml --ref <branch>
   - Latency: the browser's `baseLatency` and `outputLatency` plus our 4 ms block. Headless Chromium reports a fake ~100 ms output, so only real devices count. `?` means the browser does not say (iOS 15 Safari has no `outputLatency`). `@44100` follows when the context does not run at 48 kHz.
   - `cpu`: the audio thread's busy time over the last second, as a share of real time (worklet.js `cpu`, measured with `Date.now()`, the only clock there). A desktop shows ~7 % for one Growl note.
   - `max`: the longest single render call that second, in whole ms. A 128-sample call has 2.7 ms at 48 kHz; spikes past that crackle even when `cpu` is low.
-- **`?test=offline`** renders 4 s of a held Growl note with no deadline (`OfflineAudioContext`, the same worklet), plays that buffer and shows how long the render took. Clean there but crackling live means real-time deadlines are missed; crackling there too means the DSP itself goes wrong on that browser. A desktop renders it in ~270 ms.
+- **`?test=sound`** runs the `npm test` sound check (`soundcheck.js`, shared with `test/soundcheck.mjs`) on the phone's main thread and lists the rows, FAIL in red. It needs no tap. It also counts jumps through the whole `Engine` (0 in Node). A FAIL on a phone where Node passes means that browser computes the synth differently.
+- **`?test=offline`** renders 4 s of a held Growl note with no deadline (`OfflineAudioContext`, the same worklet), plays that buffer and shows how long the render took and its jumps (samples that leap by more than 0.25; 0 on a desktop). Clean there but crackling live means real-time deadlines are missed; crackling there too means the DSP itself goes wrong on that browser. A desktop renders it in ~270 ms.
 - **Test switches for crackling phones** (with or without `debug`): `?rate=native` lets the device choose the sample rate (no resampling; frames then follow that rate). `?hint=balanced|playback|<seconds>` asks for a bigger output buffer than `interactive`.
 
 ## Differences from Android
@@ -87,5 +88,5 @@ gh workflow run web.yml --ref <branch>
 - CPU per voice is ~2.5–3.5 % of a desktop core (`synth.js` in Node), about 1.5× the Kotlin cost.
 - **Android Chrome:** plays fine; latency `3+24+4` ms.
 - **New iPhone Safari:** plays fine; latency `2.7+10.1+4.0` ms. Tilt and shake work after the `touchend` permission, so the iOS sign flip (`IOS_SIGNS`) is right.
-- **Old iPhone, iOS 15 Safari:** works after the `roundPath` fix; latency `2.7+?+4.0`. **Every sound crackles there, in headphones too**, at `cpu` 3–7 %: not the speaker, not average CPU. `?rate=native` (max 1–3 ms) and `?hint=playback` crackle too, so it is not resampling or the buffer hint. Next: `?test=offline`.
+- **Old iPhone, iOS 15 Safari:** works after the `roundPath` fix; latency `2.7+?+4.0`. **Every sound crackles there, in headphones too**, at `cpu` 3–7 %: not the speaker, not average CPU. `?rate=native` (max 1–3 ms) and `?hint=playback` crackle too, so it is not resampling or the buffer hint. `?test=offline` crackles too (4 s in 666 ms, so not speed): the DSP computes wrong there. Next: `?test=sound`.
 - Not checked: the silent switch, the wake lock, CPU on a mid-range Android with several tracks.

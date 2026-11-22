@@ -403,7 +403,8 @@ async function start() {
 /**
  * ?test=offline: renders 4 s of a held Growl note with no deadline (OfflineAudioContext, the same
  * worklet), then plays that buffer. Clean here but crackling live means the phone misses real-time
- * deadlines; crackling here too means the synth itself computes wrong on that browser.
+ * deadlines; crackling here too means the synth itself computes wrong on that browser. `jumps`: samples
+ * that leap by more than 0.25, which a smooth note never does (0 on a desktop).
  */
 async function offlineTest() {
   const sr = 48000;
@@ -423,7 +424,12 @@ async function offlineTest() {
     src.buffer = buf;
     src.connect(audio.destination);
     src.start();
-    toast(`offline: ${secs} s rendered in ${Math.round(took)} ms`);
+    let jumps = 0;
+    for (let c = 0; c < 2; c++) {
+      const x = buf.getChannelData(c);
+      for (let i = 1; i < x.length; i++) if (Math.abs(x[i] - x[i - 1]) > 0.25) jumps++;
+    }
+    toast(`offline: ${secs} s in ${Math.round(took)} ms, jumps ${jumps}`);
     toastUntil = performance.now() + secs * 1000 + 2000;
   } catch (e) {
     toast(`offline test failed: ${e && e.message ? e.message : e}`);
@@ -548,6 +554,7 @@ function draw() {
 
   if (browser) drawBrowser(browser);
   drawToast();
+  if (testLines) return drawTest();
   if (!audio) drawStart();
   else if (window.innerWidth > window.innerHeight && matchMedia('(pointer: coarse)').matches) drawUpright();
 }
@@ -851,6 +858,33 @@ function frame() {
     dirty = false;
   }
   busyLastFrame = busy;
+}
+
+/**
+ * ?test=sound: runs the `npm test` sound check (soundcheck.js) on this browser's main thread and shows
+ * the rows. A FAIL on a phone where the desktop passes means that browser computes the synth differently.
+ */
+let testLines = null;
+if (new URLSearchParams(location.search).get('test') === 'sound') {
+  testLines = ['running the sound check…'];
+  setTimeout(async () => {
+    try {
+      const { soundcheck, format } = await import('./soundcheck.js');
+      const t0 = performance.now();
+      const rows = soundcheck();
+      testLines = [`${rows.filter((r) => !r.ok).length} failed, ${Math.round(performance.now() - t0)} ms`, ...rows.map(format)];
+    } catch (e) {
+      testLines = [`sound check failed: ${e && e.message ? e.message : e}`];
+    }
+    dirty = true;
+  }, 300);
+}
+
+function drawTest() {
+  ctx.fillStyle = rgb(16, 16, 22, 245);
+  ctx.fillRect(0, 0, W, H);
+  font(24, MONO);
+  testLines.forEach((s, i) => text(s, px(16), px(80) + i * px(40), s.startsWith('FAIL') ? rgb(255, 120, 100) : 'white'));
 }
 
 window.addEventListener('resize', layout);

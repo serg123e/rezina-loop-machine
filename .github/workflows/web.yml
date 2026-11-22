@@ -42,7 +42,7 @@ jobs:
         run: |
           v=${GITHUB_SHA::12}
           sed -i "s/const VERSION = 'dev'/const VERSION = '$v'/" web/sw.js
-          sed -i -E "s/\b(app|synth|sessions|worklet)\.js(['\"])/\1.js?v=$v\2/g" web/index.html web/*.js
+          sed -i -E "s/\b(app|synth|sessions|worklet|soundcheck)\.js(['\"])/\1.js?v=$v\2/g" web/index.html web/*.js
           grep -q "app.js?v=$v" web/index.html && grep -q "synth.js?v=$v" web/app.js && grep -q "synth.js?v=$v" web/worklet.js
           rm -rf web/test web/package.json
       - uses: actions/configure-pages@v5
