@@ -25,13 +25,16 @@ export async function encode(s) {
     d.setInt8(o++, t.frames ? 1 : 0);
     if (t.frames) for (let i = 0; i < s.loopLen * Frame.SIZE; i++, o += 4) d.setFloat32(o, t.frames[i]);
   }
+  // Safari before 16.4 has no CompressionStream: keep the bytes plain there (decode takes both)
+  if (typeof CompressionStream === 'undefined') return new Uint8Array(d.buffer);
   return pipe(d.buffer, new CompressionStream('gzip'));
 }
 
-/** .rez bytes → session; throws on anything that is not a v1 session. */
+/** .rez bytes (gzip'd, or plain from an old Safari) → session; throws on anything that is not a v1 session. */
 export async function decode(bytes) {
-  const raw = await pipe(bytes, new DecompressionStream('gzip'));
-  const d = new DataView(raw.buffer);
+  const b = new Uint8Array(bytes);
+  const raw = b[0] === 0x1f && b[1] === 0x8b ? await pipe(b, new DecompressionStream('gzip')) : b;
+  const d = new DataView(raw.buffer, raw.byteOffset, raw.byteLength);
   let o = 0;
   const int = () => { const v = d.getInt32(o); o += 4; return v; };
   if (int() !== MAGIC || int() !== VERSION || int() !== Frame.SIZE) throw new Error('not a rezina v1 session');

@@ -444,10 +444,21 @@ function text(s, x, y, color, align = 'left') {
   ctx.fillText(s, x, y);
 }
 
+/** A rounded-rectangle path; `ctx.roundRect` itself is Safari 16+ and black-screened iOS 15. */
+function roundPath(x, y, w, h, r) {
+  r = Math.min(r, w / 2, h / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+
 function roundRect(r, color, radius = px(16)) {
   ctx.fillStyle = color;
-  ctx.beginPath();
-  ctx.roundRect(r.x, r.y, r.w, r.h, radius);
+  roundPath(r.x, r.y, r.w, r.h, radius);
   ctx.fill();
 }
 
@@ -650,8 +661,7 @@ function drawPanel() {
     if (i === st.selected) {
       ctx.strokeStyle = 'white';
       ctx.lineWidth = px(5);
-      ctx.beginPath();
-      ctx.roundRect(r.x, r.y, r.w, r.h, px(16));
+      roundPath(r.x, r.y, r.w, r.h, px(16));
       ctx.stroke();
     }
     let state;

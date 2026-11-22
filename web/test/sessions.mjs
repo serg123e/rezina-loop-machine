@@ -22,4 +22,10 @@ expect('round trip', back.bpm === 105 && back.tracks[0].muted && back.tracks[1].
 let threw = false;
 try { await decode(await encode({ ...s, tracks: [{ mode: 99, muted: false, frames: null }] })); } catch { threw = true; }
 expect('unknown sound refused', threw);
+// an old Safari (no CompressionStream) stores plain bytes; decode reads them too
+const CS = globalThis.CompressionStream;
+delete globalThis.CompressionStream;
+const plain = await encode(s);
+globalThis.CompressionStream = CS;
+expect('plain bytes without CompressionStream', plain[0] === 0x52 && (await decode(plain)).bpm === 105);
 process.exit(failed ? 1 : 0);

@@ -59,6 +59,11 @@ gh workflow run web.yml --ref <branch>
 - **iOS silent switch.** `navigator.audioSession.type = 'playback'` (Safari 16.4+) makes sound play with the switch on.
 - **Pause.** On `visibilitychange` the context is suspended (like Android `onPause`). Any touch resumes it, which iOS needs after a call. A screen wake lock is held while visible.
 - **Drawing.** It redraws only while something moves, plus one frame after, as on iOS.
+- **Old Safari (iOS 14.5–16).** AudioWorklet works there, but two newer APIs are missing:
+  - `ctx.roundRect` (Safari 16+): it threw on every frame, so the screen stayed black while the sound played. Rounded rectangles go through `roundPath()` (arcTo).
+  - `CompressionStream` (Safari 16.4+): sessions are stored as plain, ungzipped bytes there. `decode()` reads both, telling them apart by the gzip magic number.
+  - Check new canvas or storage APIs against iOS 15 before using them.
+- **Playwright WebKit** screenshots at device scale 2 show the canvas at twice its size. That is the harness, not the page: the sizes are right, and Chromium and real iPhones look fine.
 - **`?debug=1`** adds a readout line `latency base+out+block = total ms`: the browser's `baseLatency` and `outputLatency` plus our 4 ms block. Use it to measure a phone. Headless Chromium reports a fake ~100 ms output, so only real devices count.
 
 ## Differences from Android
