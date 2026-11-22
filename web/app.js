@@ -402,9 +402,10 @@ async function start() {
 
 /**
  * ?test=offline: renders 4 s of a held Growl note with no deadline (OfflineAudioContext, the same
- * worklet), then plays that buffer. Clean here but crackling live means the phone misses real-time
- * deadlines; crackling here too means the synth itself computes wrong on that browser. `jumps`: samples
- * that leap by more than 0.25, which a smooth note never does (0 on a desktop).
+ * worklet), then plays, with the live synth disconnected: a plain browser sine, that note quiet, that
+ * note at full level, 2 s each with a label. A crackling sine blames the browser's output on that phone;
+ * a crackle only at full level, the level. `jumps`: samples of the render that leap by more than 0.25,
+ * which a smooth note never does (0 on a desktop and on iOS 15): >0 would blame our DSP.
  */
 async function offlineTest() {
   const sr = 48000;
@@ -420,17 +421,36 @@ async function offlineTest() {
     const t0 = performance.now();
     const buf = await off.startRendering();
     const took = performance.now() - t0;
-    const src = audio.createBufferSource();
-    src.buffer = buf;
-    src.connect(audio.destination);
-    src.start();
     let jumps = 0;
     for (let c = 0; c < 2; c++) {
       const x = buf.getChannelData(c);
       for (let i = 1; i < x.length; i++) if (Math.abs(x[i] - x[i - 1]) > 0.25) jumps++;
     }
-    toast(`offline: ${secs} s in ${Math.round(took)} ms, jumps ${jumps}`);
-    toastUntil = performance.now() + secs * 1000 + 2000;
+    // Then three 2 s stages with our live synth disconnected, to find where crackling starts:
+    // the browser's own sine, our note at a quarter level, our note at full level.
+    node.disconnect();
+    const t = audio.currentTime + 0.5;
+    const osc = audio.createOscillator();
+    const og = audio.createGain();
+    osc.frequency.value = 220;
+    og.gain.value = 0.3;
+    osc.connect(og).connect(audio.destination);
+    osc.start(t);
+    osc.stop(t + 2);
+    [0.25, 1].forEach((level, k) => {
+      const src = audio.createBufferSource();
+      const g = audio.createGain();
+      src.buffer = buf;
+      g.gain.value = level;
+      src.connect(g).connect(audio.destination);
+      src.start(t + 2.5 + 2.5 * k, 1, 2);
+    });
+    const stages = ['1/3 sine (browser)', '2/3 bass, quiet', '3/3 bass, full'];
+    stages.forEach((name, k) => setTimeout(() => {
+      toast(`${name} · ${Math.round(took)} ms, jumps ${jumps}`);
+      toastUntil = performance.now() + 2400;
+    }, 500 + 2500 * k));
+    setTimeout(() => { node.connect(audio.destination); toast('test done'); }, 8200);
   } catch (e) {
     toast(`offline test failed: ${e && e.message ? e.message : e}`);
   }
