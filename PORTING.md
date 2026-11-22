@@ -7,7 +7,7 @@ There are three copies of Rezina with the same behaviour: Android (`app/`), iPho
 ## Android (`app/`)
 
 - [ ] **See-through readout.** The note rings should show through a half-transparent plate under the text readout (web: `drawReadout`, `plate()` in `app.js`). Ring names that fall under the plate are not drawn.
-- [ ] **Import a `.rez` file.** Web has "＋ Import .rez file…" as the first row of the Open… list: the file is saved under its own name and opened (`fileInput` in `app.js`). Android: an `ACTION_OPEN_DOCUMENT` intent.
+- [ ] **Import a `.rez` file.** Web has "＋ Import .rez file…" as the first row of the Open… list: the file is saved under its own name and opened (`fileInput` in `app.js`). Android: an `ACTION_OPEN_DOCUMENT` intent. A file from outside can be broken: refuse loopLen, loopBeats or bpm ≤ 0 (web: `decode` in `sessions.js`).
 - [ ] **Latency and CPU on screen.** Web shows `lat base+out+block=total cpu N% max M` with `?debug=1`. Android logs only its own buffer size (`adb logcat -s rezina:I`). The output part needs `AudioTrack.getTimestamp`.
 - [ ] **Convert a file's frames to this phone's rate on load.** Sessions record their sample rate (format v2), but nothing converts yet. A 44.1 kHz file still plays ~9 % faster at 48 kHz.
 - [ ] **Latency shift of takes.** Record each take shifted back by output latency + touch latency (web: `Engine.comp`, `sendLatency` in `app.js`; see `web/CLAUDE.md`, "Takes"). Android: the output part from `AudioTrack.getTimestamp`, touch ~15–30 ms.

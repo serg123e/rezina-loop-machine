@@ -33,7 +33,7 @@ gh workflow run web.yml --ref <branch>
 
 - That domain does not redirect http to https, so `index.html` does it: without https there is no AudioWorklet and no sensors.
 - **Cloudflare keeps `.js` for 4 hours** (`max-age=14400`, edge cache). The page itself is not cached there (10 minutes in the browser). So the deploy writes the commit into every script URL: `app.js?v=<commit>` in `index.html`, and the same for each `import` and `addModule`. A new page pulls new scripts, and old copies are never mixed in.
-  - Keep imports as plain `'./name.js'` strings: the deploy finds them with a regex (`web.yml`: app, synth, sessions, worklet, soundcheck). A new `.js` file must be added to that regex.
+  - Keep imports as plain `'./name.js'` strings: the deploy finds them with a regex (`web.yml`: app, synth, sessions, worklet, soundcheck, quantize). A new `.js` file must be added to that regex and to `FILES` in `sw.js` (the offline copy).
   - On 2026-11-22 phones kept running the old `app.js` for hours before this was in place.
 - The deploy writes the commit into `sw.js` (`VERSION`), so each deploy gets a fresh offline cache. Offline lookups ignore `?v=`.
 - The service worker fetches from the network first, so an online visit always gets the latest files.

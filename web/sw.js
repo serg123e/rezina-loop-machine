@@ -1,7 +1,8 @@
 // Offline copy of the app. VERSION is replaced with the commit on deploy (.github/workflows/web.yml),
 // so every deploy fills a fresh cache and drops the old one.
 const VERSION = 'dev';
-const FILES = ['./', 'index.html', 'app.js', 'synth.js', 'worklet.js', 'sessions.js', 'manifest.webmanifest',
+const FILES = ['./', 'index.html', 'app.js', 'synth.js', 'worklet.js', 'sessions.js', 'quantize.js', 'soundcheck.js',
+  'manifest.webmanifest',
   'icon-180.png', 'icon-192.png', 'icon-512.png'];
 
 self.addEventListener('install', (e) => {

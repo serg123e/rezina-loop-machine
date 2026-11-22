@@ -32,7 +32,7 @@ export async function encode(s) {
   return pipe(d.buffer, new CompressionStream('gzip'));
 }
 
-/** .rez bytes (gzip'd, or plain from an old Safari) → session; throws on anything that is not a v1 session. */
+/** .rez bytes (gzip'd, or plain from an old Safari) → session; throws on anything that is not a v1 or v2 session. */
 export async function decode(bytes) {
   const b = new Uint8Array(bytes);
   const raw = b[0] === 0x1f && b[1] === 0x8b ? await pipe(b, new DecompressionStream('gzip')) : b;
@@ -44,6 +44,7 @@ export async function decode(bytes) {
   if (version < 1 || version > VERSION || int() !== Frame.SIZE) throw new Error(`unsupported rezina session v${version}`);
   const sampleRate = version >= 2 ? int() : 0;
   const loopLen = int(), loopBeats = int(), bpm = int(), count = int();
+  if (loopLen <= 0 || loopBeats <= 0 || bpm <= 0 || count < 0) throw new Error('broken rezina session');
   const tracks = [];
   for (let k = 0; k < count; k++) {
     const mode = d.getInt8(o++);

@@ -79,6 +79,13 @@ e.command({ t: 'rec' });
 e.command({ t: 'rec' }); // armed, then a second tap cancels
 expect('a second tap cancels the wait', e.armed, -1);
 
+// erasing the loop while a take waits for its bar line ends the wait
+e.command({ t: 'select', i: 0 }); // empty since the erase above
+e.command({ t: 'rec' });
+expect('armed on track 1', e.armed, 0);
+[2, 3].forEach((i) => e.command({ t: 'clear', i })); // the tracks with content
+expect('no loop, no wait', [e.loopLen, e.armed], [0, -1]);
+
 // load replaces everything
 const frames = new Float32Array(300 * Frame.SIZE);
 e.command({ t: 'load', session: { loopLen: 300, loopBeats: 4, bpm: 120, tracks: [{ mode: Mode.FM_BASS.id, muted: true, frames }, { mode: 1, muted: false, frames: null }] } });

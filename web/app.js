@@ -513,6 +513,7 @@ async function start() {
     try {
       await audio.audioWorklet.addModule('worklet.js');
     } catch {
+      audio.close();
       audio = null;
       return toast('This browser cannot play the synth');
     }

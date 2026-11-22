@@ -29,6 +29,9 @@ expect('v1 opens, rate unknown', old.sampleRate === 0 && old.loopLen === 2 && ol
 let threw = false;
 try { await decode(await encode({ ...s, tracks: [{ mode: 99, muted: false, frames: null }] })); } catch { threw = true; }
 expect('unknown sound refused', threw);
+threw = false;
+try { await decode(await encode({ ...s, loopBeats: 0 })); } catch { threw = true; }
+expect('a loop with no beats refused', threw);
 // an old Safari (no CompressionStream) stores plain bytes; decode reads them too
 const CS = globalThis.CompressionStream;
 delete globalThis.CompressionStream;

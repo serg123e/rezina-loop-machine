@@ -185,6 +185,7 @@ export class Engine {
     t.recording = false;
     t.hasContent = false;
     if (!this.tracks.some((o) => o.hasContent || o.recording)) {
+      this.stopClicks(); // no loop, no bar line to wait for
       this.loopLen = 0;
       this.loopBeats = 0;
       this.pos = 0;
@@ -237,7 +238,7 @@ export class Engine {
     const len = this.loopLen;
     if (t.hasContent && len > 0) {
       const step = len / (this.loopBeats * DIVISION);
-      if (!this.grid || !(step >= 1)) t.frames.set(t.raw.subarray(0, len * Frame.SIZE));
+      if (!this.grid || !(step >= 1) || !Number.isFinite(step)) t.frames.set(t.raw.subarray(0, len * Frame.SIZE));
       else if (MODES[t.mode].drums) quantizeHits(t.raw, t.frames, len, step);
       else quantizeNotes(t.raw, t.frames, len, step);
     }
