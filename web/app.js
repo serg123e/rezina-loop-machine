@@ -530,13 +530,14 @@ function drawReadout() {
  * What the browser says it adds between our samples and the speaker: base (the audio graph's own
  * buffering) + output (the device and OS) + our block, which can hold a sample up to 4 ms. Shown as
  * `latency base+out+block = total ms`; `?` where the browser does not tell (older Safari: outputLatency).
+ * Then `cpu`: the audio thread's share of its time budget (worklet.js `cpu`); near 100 % the sound crackles.
  */
 function latencyLine() {
   if (!audio) return 'audio: not started';
   const ms = (s) => (typeof s === 'number' ? (s * 1000).toFixed(1) : '?');
   const total = (audio.baseLatency || 0) + (audio.outputLatency || 0) + BLOCK / audio.sampleRate;
   const rate = audio.sampleRate === 48000 ? '' : ` @${audio.sampleRate}`;
-  return `latency ${ms(audio.baseLatency)}+${ms(audio.outputLatency)}+${ms(BLOCK / audio.sampleRate)} = ${ms(total)} ms${rate}`;
+  return `latency ${ms(audio.baseLatency)}+${ms(audio.outputLatency)}+${ms(BLOCK / audio.sampleRate)} = ${ms(total)} ms${rate} · cpu ${Math.round((st.cpu || 0) * 100)}%`;
 }
 
 /** Band length (from the peg, one finger) that gives `t`. */

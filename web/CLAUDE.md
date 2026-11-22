@@ -64,7 +64,9 @@ gh workflow run web.yml --ref <branch>
   - `CompressionStream` (Safari 16.4+): sessions are stored as plain, ungzipped bytes there. `decode()` reads both, telling them apart by the gzip magic number.
   - Check new canvas or storage APIs against iOS 15 before using them.
 - **Playwright WebKit** screenshots at device scale 2 show the canvas at twice its size. That is the harness, not the page: the sizes are right, and Chromium and real iPhones look fine.
-- **`?debug=1`** adds a readout line `latency base+out+block = total ms`: the browser's `baseLatency` and `outputLatency` plus our 4 ms block. Use it to measure a phone. Headless Chromium reports a fake ~100 ms output, so only real devices count.
+- **`?debug=1`** adds a readout line `latency base+out+block = total ms · cpu N%`.
+  - Latency: the browser's `baseLatency` and `outputLatency` plus our 4 ms block. Headless Chromium reports a fake ~100 ms output, so only real devices count. `?` means the browser does not say (iOS 15 Safari has no `outputLatency`).
+  - `cpu`: the audio thread's busy time over the last second, as a share of real time (worklet.js `cpu`, measured with `Date.now()`, the only clock there). Near 100 % the sound crackles. A desktop shows ~7 % for one Growl note.
 
 ## Differences from Android
 

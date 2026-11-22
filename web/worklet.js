@@ -84,6 +84,10 @@ export class Engine {
     this.master = new Master(sr);
     this.click = new Click(sr);
     this.blockCount = 0;
+    /** Share of real time spent rendering, over the last second (0.5 = half the time budget). */
+    this.cpu = 0;
+    this.busyMs = 0;
+    this.measured = 0;
   }
 
   /** A message from the page. */
@@ -263,7 +267,7 @@ export class Engine {
       t: 'state',
       selected: this.selected, loopLen: this.loopLen, pos: this.pos, recCount: this.recCount,
       metronome: this.metronome, bpm: this.bpm, loopBeats: this.loopBeats, barBlocks: this.barBlocks,
-      clickBlocks: this.clickBlocks, countingIn: this.countingIn,
+      clickBlocks: this.clickBlocks, countingIn: this.countingIn, cpu: this.cpu,
       tracks: this.tracks.map((t) => ({ mode: t.mode, muted: t.muted, hasContent: t.hasContent, recording: t.recording, level: t.level })),
     });
   }
@@ -271,6 +275,9 @@ export class Engine {
   /** Fills `outL`/`outR` (any length) from whole blocks. */
   render(outL, outR) {
     const n = outL.length;
+    // Date.now() is the only clock in an AudioWorklet; at 1 ms it reads 0 or 1 per call, which
+    // averages out over a second of calls into the busy time
+    const t0 = Date.now();
     for (let i = 0; i < n; i++) {
       if (this.mixPos === BLOCK) {
         this.renderBlock();
@@ -279,6 +286,13 @@ export class Engine {
       outL[i] = this.mix[2 * this.mixPos];
       if (outR) outR[i] = this.mix[2 * this.mixPos + 1];
       this.mixPos++;
+    }
+    this.busyMs += Date.now() - t0;
+    this.measured += n;
+    if (this.measured >= this.sr) {
+      this.cpu = this.busyMs / (this.measured / this.sr * 1000);
+      this.busyMs = 0;
+      this.measured = 0;
     }
   }
 }
