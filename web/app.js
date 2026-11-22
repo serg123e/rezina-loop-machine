@@ -891,7 +891,7 @@ function drawPanel() {
   st.tracks.forEach((tr, i) => {
     const r = cells[i];
     let color;
-    if (tr.recording || st.countingIn === i) color = pulse ? rgb(200, 40, 40) : rgb(140, 30, 30);
+    if (tr.recording || st.countingIn === i || st.armed === i) color = pulse ? rgb(200, 40, 40) : rgb(140, 30, 30);
     else if (!tr.hasContent) color = rgb(42, 42, 52);
     else if (tr.muted) color = rgb(30, 30, 34);
     else color = dim(TRACK_COLORS[i]);
@@ -909,6 +909,7 @@ function drawPanel() {
     let state;
     if (tr.recording) state = '● rec';
     else if (st.countingIn === i) state = 'count-in';
+    else if (st.armed === i) state = 'waiting';
     else if (!tr.hasContent) state = 'empty';
     else if (tr.muted) state = 'muted';
     else state = 'playing';
@@ -931,6 +932,14 @@ function drawPanel() {
   } else if (loopLen > 0) {
     ctx.fillStyle = rgb(90, 160, 255);
     ctx.fillRect(progress.x, progress.y, progress.w * st.pos / loopLen, progress.h);
+    // a take in progress: what it has recorded so far is red, bar after bar
+    if (st.tracks.some((t) => t.recording)) {
+      ctx.fillStyle = rgb(230, 60, 60);
+      const from = st.recStart, n = Math.min(st.recCount, loopLen);
+      const span = (a, b) => ctx.fillRect(progress.x + progress.w * a / loopLen, progress.y, progress.w * (b - a) / loopLen, progress.h);
+      if (from + n <= loopLen) span(from, from + n);
+      else { span(from, loopLen); span(0, from + n - loopLen); }
+    }
     // bar lines, so the loop reads as bars of the metronome's grid
     ctx.fillStyle = BG;
     const bars = Math.trunc(st.loopBeats / 4);
@@ -943,10 +952,16 @@ function drawPanel() {
   const selected = st.tracks[st.selected];
   const firstTake = loopLen === 0 && selected.recording;
   const counting = st.countingIn === st.selected;
-  roundRect(recButton, selected.recording || counting ? rgb(170, 40, 40) : rgb(60, 60, 72));
+  const waiting = st.armed === st.selected;
+  roundRect(recButton, selected.recording || counting || waiting ? rgb(170, 40, 40) : rgb(60, 60, 72));
   font(38);
   let recText;
   if (counting) recText = `Count-in… ${4 - beat}`;
+  else if (waiting) {
+    // beats left to the bar line the take starts on
+    const left = (st.armedAt - st.pos + loopLen) % loopLen;
+    recText = `● Rec in ${Math.max(1, Math.ceil(left / (loopLen / st.loopBeats)))}`;
+  }
   else if (firstTake && bar > 0) recText = `■ Stop · bar ${Math.trunc(st.recCount / bar) + 1}`;
   else if (firstTake) recText = `■ Stop · ${(st.recCount / blocksPerSecond).toFixed(1)} s`;
   else if (selected.recording) recText = '■ Stop';

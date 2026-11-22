@@ -82,8 +82,9 @@ const notesIn = (f) => {
   e.command({ t: 'select', i: 1 });
   e.command({ t: 'mode', i: 1, mode: Mode.DRUMS.id });
   run(100 - e.pos);           // playhead at block 100
-  e.command({ t: 'rec' });
-  run(50);                    // block 150
+  e.command({ t: 'rec' });    // a one-bar loop: waits for the line at block 0
+  run(400);
+  run(150);                   // block 150 of the take
   e.command({ t: 'hit', tune: 0.1, vel: 1, x: 0, y: 0 });
   run(500);
   const at = []; for (let b = 0; b < 500; b++) if (e.tracks[1].raw[b * S + Frame.EVENT] === Frame.EV_HIT) at.push(b);

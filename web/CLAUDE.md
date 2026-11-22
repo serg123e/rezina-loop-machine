@@ -68,6 +68,13 @@ gh workflow run web.yml --ref <branch>
   - Save writes `raw`, so the grid stays switchable after a reload, and the file format did not change. Android and iOS open such files as played, without the grid.
   - Tests: `test/quantize.mjs`.
 
+## Takes start on a bar line (web only so far, see PORTING.md)
+
+- Once a loop exists, Rec arms the selected track (`Engine.armed`, `armedAt` = `nextBar(pos)`). The take starts when the playhead reaches that bar line and lasts one loop, as before.
+- While armed, the cell pulses and reads "waiting", and the Rec button counts the beats down (`● Rec in 3`). A second tap cancels (`stopClicks` clears the arm too).
+- While a take records, the part it has covered is red on the progress bar (`recStart` + `recCount`).
+- The first take is unchanged: count-in with the metronome, or at once without it.
+
 ## Browser specifics
 
 - **The first tap starts everything.** Browsers allow sound only after a gesture, so that tap does not play.

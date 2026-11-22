@@ -77,6 +77,11 @@ export class Engine {
     this.loopLen = 0; this.pos = 0; this.recCount = 0;
     this.metronome = true; this.bpm = 100;
     this.loopBeats = 0; this.barBlocks = 0; this.clickBlocks = 0; this.countingIn = -1;
+    /** Once a loop exists, Rec waits for the next bar line: the track waiting, or -1, and that line's block. */
+    this.armed = -1;
+    this.armedAt = 0;
+    /** Block where the current take started (later takes), for the red recorded part on screen. */
+    this.recStart = 0;
     /** Pull hits and note starts toward the sixteenths (quantize.js). */
     this.grid = true;
     /**
@@ -130,17 +135,31 @@ export class Engine {
   toggleRecord(i) {
     const t = this.tracks[i];
     if (t.recording) this.stopRecording(t);
-    else if (this.countingIn >= 0) this.stopClicks(); // second tap during count-in cancels it
+    else if (this.countingIn >= 0 || this.armed >= 0) this.stopClicks(); // a second tap while waiting cancels
     else {
       for (const o of this.tracks) if (o.recording) this.stopRecording(o);
       if (this.loopLen === 0 && this.metronome) {
         this.barBlocks = Math.round(4 * 60 / this.bpm * this.blocksPerSecond);
         this.clickBlocks = 0;
         this.countingIn = i;
+      } else if (this.loopLen > 0) {
+        // a take over a loop starts on the next bar line and lasts one loop
+        this.armed = i;
+        this.armedAt = this.nextBar(this.pos);
       } else {
         this.startRecording(t);
       }
     }
+  }
+
+  /** The first bar line at or after block `p` (bars are whole parts of the loop). */
+  nextBar(p) {
+    const bars = Math.max(1, Math.round(this.loopBeats / 4));
+    for (let k = 0; k < bars; k++) {
+      const b = Math.round(k * this.loopLen / bars);
+      if (b >= p) return b;
+    }
+    return 0; // past the last line: the loop's start
   }
 
   load(s) {
@@ -162,7 +181,7 @@ export class Engine {
 
   clear(i) {
     const t = this.tracks[i];
-    if (this.countingIn === i) this.stopClicks();
+    if (this.countingIn === i || this.armed === i) this.stopClicks();
     t.recording = false;
     t.hasContent = false;
     if (!this.tracks.some((o) => o.hasContent || o.recording)) {
@@ -205,9 +224,11 @@ export class Engine {
     this.applyGrid(this.tracks.indexOf(t));
   }
 
+  /** Cancels any wait for a take: the count-in, or a take armed for the next bar line. */
   stopClicks() {
     this.countingIn = -1;
     this.barBlocks = 0;
+    this.armed = -1;
   }
 
   /** Rebuilds what track `i` plays from its raw take (grid or plain copy), then tells the page. */
@@ -242,6 +263,11 @@ export class Engine {
     if (this.countingIn >= 0 && this.clickBlocks === this.barBlocks) {
       this.startRecording(tracks[this.countingIn]);
       this.countingIn = -1;
+    }
+    if (this.armed >= 0 && this.pos === this.armedAt) {
+      this.startRecording(tracks[this.armed]);
+      this.recStart = this.pos;
+      this.armed = -1;
     }
 
     live[Frame.TENSION] = this.tension;
@@ -302,7 +328,8 @@ export class Engine {
       t: 'state',
       selected: this.selected, loopLen: this.loopLen, pos: this.pos, recCount: this.recCount,
       metronome: this.metronome, bpm: this.bpm, loopBeats: this.loopBeats, barBlocks: this.barBlocks,
-      clickBlocks: this.clickBlocks, countingIn: this.countingIn, cpu: this.cpu, peakMs: this.peakMs,
+      clickBlocks: this.clickBlocks, countingIn: this.countingIn,
+      armed: this.armed, armedAt: this.armedAt, recStart: this.recStart, cpu: this.cpu, peakMs: this.peakMs,
       tracks: this.tracks.map((t) => ({ mode: t.mode, muted: t.muted, hasContent: t.hasContent, recording: t.recording, level: t.level })),
     });
   }

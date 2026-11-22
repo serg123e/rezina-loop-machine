@@ -4,7 +4,7 @@ import { Frame, BLOCK, Mode } from '../synth.js';
 
 let failed = false;
 const expect = (label, got, want) => {
-  const ok = got === want;
+  const ok = JSON.stringify(got) === JSON.stringify(want);
   if (!ok) failed = true;
   console.log(`${ok ? 'ok  ' : 'FAIL'} ${label}${ok ? '' : `: got ${got}, want ${want}`}`);
 };
@@ -35,9 +35,11 @@ expect('frames sent to the page', sent.frames.length, bar * Frame.SIZE);
 e.command({ t: 'select', i: 1 });
 e.command({ t: 'mode', i: 1, mode: Mode.HARD_DRUMS.id });
 e.command({ t: 'rec' });
-expect('second take records at once', e.tracks[1].recording, true);
+expect('second take waits for the bar line', [e.armed, e.tracks[1].recording], [1, false]);
+run(1); // the playhead is on the loop's start: the line is right here
+expect('…and starts on it', e.tracks[1].recording, true);
 e.command({ t: 'hit', tune: 0.1, vel: 1, x: 0.5, y: 0.8 });
-run(bar + 1);
+run(bar);
 expect('second take stopped after one loop', e.tracks[1].recording, false);
 expect('hit recorded', Array.from({ length: bar }, (_, b) => e.tracks[1].frames[b * Frame.SIZE + Frame.EVENT]).includes(Frame.EV_HIT), true);
 expect('tempo locked after first loop', (e.command({ t: 'bpm', bpm: 140 }), e.bpm), 100);
@@ -62,6 +64,20 @@ e.command({ t: 'rec' });
 expect('free take keeps its length', e.loopLen, 1000);
 expect('fitted to 2 bars', e.loopBeats, 8);
 expect('tempo from the take', e.bpm, Math.round(8 * 60 * e.blocksPerSecond / 1000));
+
+// a take over a 2-bar loop, Rec in the middle of bar 1: it waits for bar 2's line (block 500)
+run(100);
+e.command({ t: 'select', i: 3 });
+e.command({ t: 'rec' });
+expect('armed for the next bar line', [e.armed, e.armedAt], [3, 500]);
+run(399);
+expect('still waiting before the line', e.tracks[3].recording, false);
+run(1);
+expect('recording from the line', [e.tracks[3].recording, e.recStart], [true, 500]);
+e.command({ t: 'rec' }); // stop by hand
+e.command({ t: 'rec' });
+e.command({ t: 'rec' }); // armed, then a second tap cancels
+expect('a second tap cancels the wait', e.armed, -1);
 
 // load replaces everything
 const frames = new Float32Array(300 * Frame.SIZE);
