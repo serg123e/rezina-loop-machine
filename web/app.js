@@ -397,6 +397,37 @@ async function start() {
   node.port.onmessage = onEngine;
   node.connect(audio.destination);
   keepAwake();
+  if (new URLSearchParams(location.search).get('test') === 'offline') offlineTest();
+}
+
+/**
+ * ?test=offline: renders 4 s of a held Growl note with no deadline (OfflineAudioContext, the same
+ * worklet), then plays that buffer. Clean here but crackling live means the phone misses real-time
+ * deadlines; crackling here too means the synth itself computes wrong on that browser.
+ */
+async function offlineTest() {
+  const sr = 48000;
+  const secs = 4;
+  try {
+    const off = new OfflineAudioContext(2, sr * secs, sr);
+    await off.audioWorklet.addModule('worklet.js');
+    const n = new AudioWorkletNode(off, 'rezina', { numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [2] });
+    n.connect(off.destination);
+    n.port.postMessage({ t: 'metronome', on: false });
+    n.port.postMessage({ t: 'live', tension: 0.3, bend: 0.2, gate: true, aim: 0, shape: new Float32Array(1 + 2 * Frame.MAX_PTS) });
+    await new Promise((r) => setTimeout(r, 200)); // let the processor start and take the messages
+    const t0 = performance.now();
+    const buf = await off.startRendering();
+    const took = performance.now() - t0;
+    const src = audio.createBufferSource();
+    src.buffer = buf;
+    src.connect(audio.destination);
+    src.start();
+    toast(`offline: ${secs} s rendered in ${Math.round(took)} ms`);
+    toastUntil = performance.now() + secs * 1000 + 2000;
+  } catch (e) {
+    toast(`offline test failed: ${e && e.message ? e.message : e}`);
+  }
 }
 
 /**
