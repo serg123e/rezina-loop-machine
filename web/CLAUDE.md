@@ -70,9 +70,11 @@ gh workflow run web.yml --ref <branch>
   - `CompressionStream` (Safari 16.4+): sessions are stored as plain, ungzipped bytes there. `decode()` reads both, telling them apart by the gzip magic number.
   - Check new canvas or storage APIs against iOS 15 before using them.
 - **Playwright WebKit** screenshots at device scale 2 show the canvas at twice its size. That is the harness, not the page: the sizes are right, and Chromium and real iPhones look fine.
-- **`?debug=1`** adds a readout line `latency base+out+block = total ms · cpu N%`.
-  - Latency: the browser's `baseLatency` and `outputLatency` plus our 4 ms block. Headless Chromium reports a fake ~100 ms output, so only real devices count. `?` means the browser does not say (iOS 15 Safari has no `outputLatency`).
-  - `cpu`: the audio thread's busy time over the last second, as a share of real time (worklet.js `cpu`, measured with `Date.now()`, the only clock there). Near 100 % the sound crackles. A desktop shows ~7 % for one Growl note.
+- **`?debug=1`** adds a readout line `lat base+out+block=total ms [@rate] cpu N% max M`.
+  - Latency: the browser's `baseLatency` and `outputLatency` plus our 4 ms block. Headless Chromium reports a fake ~100 ms output, so only real devices count. `?` means the browser does not say (iOS 15 Safari has no `outputLatency`). `@44100` follows when the context does not run at 48 kHz.
+  - `cpu`: the audio thread's busy time over the last second, as a share of real time (worklet.js `cpu`, measured with `Date.now()`, the only clock there). A desktop shows ~7 % for one Growl note.
+  - `max`: the longest single render call that second, in whole ms. A 128-sample call has 2.7 ms at 48 kHz; spikes past that crackle even when `cpu` is low.
+- **Test switches for crackling phones** (with or without `debug`): `?rate=native` lets the device choose the sample rate (no resampling; frames then follow that rate). `?hint=balanced|playback|<seconds>` asks for a bigger output buffer than `interactive`.
 
 ## Differences from Android
 
@@ -84,5 +86,5 @@ gh workflow run web.yml --ref <branch>
 - CPU per voice is ~2.5–3.5 % of a desktop core (`synth.js` in Node), about 1.5× the Kotlin cost.
 - **Android Chrome:** plays fine; latency `3+24+4` ms.
 - **New iPhone Safari:** plays fine; latency `2.7+10.1+4.0` ms. Tilt and shake work after the `touchend` permission, so the iOS sign flip (`IOS_SIGNS`) is right.
-- **Old iPhone, iOS 15 Safari:** works after the `roundPath` fix; latency `2.7+?+4.0`. **Growl bass crackles there.** Not yet known if it is CPU (check `cpu` with `?debug=1`) or the small speaker.
+- **Old iPhone, iOS 15 Safari:** works after the `roundPath` fix; latency `2.7+?+4.0`. **Every sound crackles there, in headphones too**, at `cpu` 3–7 %: not the speaker, not average CPU. Suspects: resampling to 48 kHz, or a too-small buffer (test `?rate=native`, `?hint=playback`).
 - Not checked: the silent switch, the wake lock, CPU on a mid-range Android with several tracks.

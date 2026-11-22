@@ -86,6 +86,9 @@ export class Engine {
     this.blockCount = 0;
     /** Share of real time spent rendering, over the last second (0.5 = half the time budget). */
     this.cpu = 0;
+    /** The longest single render call over the last second, ms (1 ms resolution). */
+    this.peakMs = 0;
+    this.peak = 0;
     this.busyMs = 0;
     this.measured = 0;
   }
@@ -267,7 +270,7 @@ export class Engine {
       t: 'state',
       selected: this.selected, loopLen: this.loopLen, pos: this.pos, recCount: this.recCount,
       metronome: this.metronome, bpm: this.bpm, loopBeats: this.loopBeats, barBlocks: this.barBlocks,
-      clickBlocks: this.clickBlocks, countingIn: this.countingIn, cpu: this.cpu,
+      clickBlocks: this.clickBlocks, countingIn: this.countingIn, cpu: this.cpu, peakMs: this.peakMs,
       tracks: this.tracks.map((t) => ({ mode: t.mode, muted: t.muted, hasContent: t.hasContent, recording: t.recording, level: t.level })),
     });
   }
@@ -287,10 +290,14 @@ export class Engine {
       if (outR) outR[i] = this.mix[2 * this.mixPos + 1];
       this.mixPos++;
     }
-    this.busyMs += Date.now() - t0;
+    const took = Date.now() - t0;
+    this.busyMs += took;
+    if (took > this.peak) this.peak = took;
     this.measured += n;
     if (this.measured >= this.sr) {
       this.cpu = this.busyMs / (this.measured / this.sr * 1000);
+      this.peakMs = this.peak;
+      this.peak = 0;
       this.busyMs = 0;
       this.measured = 0;
     }

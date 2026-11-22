@@ -372,8 +372,14 @@ async function start() {
   // iOS: the sensors wait for a permission asked when the finger lifts (askMotion)
   if (!IOS_SIGNS) window.addEventListener('devicemotion', onMotion);
   if (navigator.audioSession) navigator.audioSession.type = 'playback'; // iOS: sound even with the silent switch on
+  // Test switches for crackling phones: ?rate=native leaves the rate to the device (no resampling, but
+  // .rez speed follows that rate), ?hint=balanced|playback|<seconds> asks for a bigger output buffer.
+  const q = new URLSearchParams(location.search);
+  const hint = q.get('hint');
+  const opts = { latencyHint: hint === null ? 'interactive' : Number.isNaN(Number(hint)) ? hint : Number(hint) };
+  if (q.get('rate') !== 'native') opts.sampleRate = 48000;
   try {
-    audio = new AudioContext({ sampleRate: 48000, latencyHint: 'interactive' });
+    audio = new AudioContext(opts);
   } catch {
     audio = new AudioContext({ latencyHint: 'interactive' });
   }
@@ -546,15 +552,16 @@ function drawReadout() {
 /**
  * What the browser says it adds between our samples and the speaker: base (the audio graph's own
  * buffering) + output (the device and OS) + our block, which can hold a sample up to 4 ms. Shown as
- * `latency base+out+block = total ms`; `?` where the browser does not tell (older Safari: outputLatency).
- * Then `cpu`: the audio thread's share of its time budget (worklet.js `cpu`); near 100 % the sound crackles.
+ * `lat base+out+block=total` (ms); `?` where the browser does not tell (older Safari: outputLatency).
+ * Then `cpu`: the audio thread's share of its time budget (worklet.js `cpu`); near 100 % the sound crackles;
+ * `max`: its longest single call that second, ms (a 128-sample call has 2.7 ms at 48 kHz).
  */
 function latencyLine() {
   if (!audio) return 'audio: not started';
   const ms = (s) => (typeof s === 'number' ? (s * 1000).toFixed(1) : '?');
   const total = (audio.baseLatency || 0) + (audio.outputLatency || 0) + BLOCK / audio.sampleRate;
   const rate = audio.sampleRate === 48000 ? '' : ` @${audio.sampleRate}`;
-  return `latency ${ms(audio.baseLatency)}+${ms(audio.outputLatency)}+${ms(BLOCK / audio.sampleRate)} = ${ms(total)} ms${rate} · cpu ${Math.round((st.cpu || 0) * 100)}%`;
+  return `lat ${ms(audio.baseLatency)}+${ms(audio.outputLatency)}+${ms(BLOCK / audio.sampleRate)}=${ms(total)}${rate} cpu ${Math.round((st.cpu || 0) * 100)}% max ${st.peakMs || 0}`;
 }
 
 /** Band length (from the peg, one finger) that gives `t`. */
