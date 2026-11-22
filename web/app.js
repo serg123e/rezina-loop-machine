@@ -31,6 +31,8 @@ const TRACK_COLORS = [[70, 210, 120], [255, 150, 50], [80, 150, 255], [200, 100,
 const NOTES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 const SANS = 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
 const MONO = 'ui-monospace, Menlo, "Roboto Mono", monospace';
+/** ?debug=1: the browser's own audio latency under the readout. */
+const DEBUG = new URLSearchParams(location.search).get('debug') === '1';
 
 const canvas = document.getElementById('band');
 const ctx = canvas.getContext('2d');
@@ -493,6 +495,7 @@ function draw() {
     `stretch ${tension.toFixed(2).padStart(4)}  bend ${bend.toFixed(2).padStart(4)}`,
     `tilt ↔ ${clamp(tiltX + aimNow, -1, 1).toFixed(2).padStart(5)}  ↕ ${tiltY.toFixed(2).padStart(4)}  shake ${shake.toFixed(2).padStart(4)}`,
   ];
+  if (DEBUG) lines.push(latencyLine());
   font(36, MONO);
   lines.forEach((s, i) => text(s, px(24), panelBottom + px(50) + i * px(46), 'lightgray'));
   gridTop = panelBottom + px(50) + lines.length * px(46);
@@ -501,6 +504,19 @@ function draw() {
   drawToast();
   if (!audio) drawStart();
   else if (window.innerWidth > window.innerHeight && matchMedia('(pointer: coarse)').matches) drawUpright();
+}
+
+/**
+ * What the browser says it adds between our samples and the speaker: base (the audio graph's own
+ * buffering) + output (the device and OS) + our block, which can hold a sample up to 4 ms. Shown as
+ * `latency base+out+block = total ms`; `?` where the browser does not tell (older Safari: outputLatency).
+ */
+function latencyLine() {
+  if (!audio) return 'audio: not started';
+  const ms = (s) => (typeof s === 'number' ? (s * 1000).toFixed(1) : '?');
+  const total = (audio.baseLatency || 0) + (audio.outputLatency || 0) + BLOCK / audio.sampleRate;
+  const rate = audio.sampleRate === 48000 ? '' : ` @${audio.sampleRate}`;
+  return `latency ${ms(audio.baseLatency)}+${ms(audio.outputLatency)}+${ms(BLOCK / audio.sampleRate)} = ${ms(total)} ms${rate}`;
 }
 
 /** Band length (from the peg, one finger) that gives `t`. */

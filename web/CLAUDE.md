@@ -59,6 +59,7 @@ gh workflow run web.yml --ref <branch>
 - **iOS silent switch.** `navigator.audioSession.type = 'playback'` (Safari 16.4+) makes sound play with the switch on.
 - **Pause.** On `visibilitychange` the context is suspended (like Android `onPause`). Any touch resumes it, which iOS needs after a call. A screen wake lock is held while visible.
 - **Drawing.** It redraws only while something moves, plus one frame after, as on iOS.
+- **`?debug=1`** adds a readout line `latency base+out+block = total ms`: the browser's `baseLatency` and `outputLatency` plus our 4 ms block. Use it to measure a phone. Headless Chromium reports a fake ~100 ms output, so only real devices count.
 
 ## Not tested
 
