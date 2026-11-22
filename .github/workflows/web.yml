@@ -36,10 +36,14 @@ jobs:
       url: ${{ steps.deploy.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
-      - name: Stamp the offline cache with the commit, drop the tests
+      # Cloudflare in front of the Pages domain keeps .js for 4 hours, so each deploy gets new script URLs
+      # (app.js?v=<commit>, the imports too); the page itself is not cached there, and pulls them in.
+      - name: Stamp script URLs and the offline cache with the commit, drop the tests
         run: |
-          sed -i "s/const VERSION = 'dev'/const VERSION = '${GITHUB_SHA::12}'/" web/sw.js
-          grep -q "${GITHUB_SHA::12}" web/sw.js
+          v=${GITHUB_SHA::12}
+          sed -i "s/const VERSION = 'dev'/const VERSION = '$v'/" web/sw.js
+          sed -i -E "s/\b(app|synth|sessions|worklet)\.js(['\"])/\1.js?v=$v\2/g" web/index.html web/*.js
+          grep -q "app.js?v=$v" web/index.html && grep -q "synth.js?v=$v" web/app.js && grep -q "synth.js?v=$v" web/worklet.js
           rm -rf web/test web/package.json
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
