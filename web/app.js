@@ -397,17 +397,21 @@ async function start() {
   }
   audio.resume();
   dirty = true;
-  try {
-    await audio.audioWorklet.addModule('worklet.js');
-  } catch {
-    audio = null;
-    return toast('This browser cannot play the synth');
-  }
   // Session frames are per block, so a 48 kHz context keeps .rez files at Android's speed.
   blocksPerSecond = audio.sampleRate / BLOCK;
-  node = new AudioWorkletNode(audio, 'rezina', { numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [2] });
-  node.port.onmessage = onEngine;
-  node.connect(audio.destination);
+  if (q.get('engine') === 'script') {
+    startScriptEngine();
+  } else {
+    try {
+      await audio.audioWorklet.addModule('worklet.js');
+    } catch {
+      audio = null;
+      return toast('This browser cannot play the synth');
+    }
+    node = new AudioWorkletNode(audio, 'rezina', { numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [2] });
+    node.port.onmessage = onEngine;
+    node.connect(audio.destination);
+  }
   keepAwake();
   if (new URLSearchParams(location.search).get('test') === 'offline') offlineTest();
 }
@@ -466,6 +470,28 @@ async function offlineTest() {
   } catch (e) {
     toast(`offline test failed: ${e && e.message ? e.message : e}`);
   }
+}
+
+/**
+ * ?engine=script: the same Engine on the page's own thread through a ScriptProcessorNode (1024 samples,
+ * ~21 ms more latency), no AudioWorklet at all. Test for old iOS Safari, where every sound in a context
+ * that holds an AudioWorklet clicks ~48 times a second, even the browser's own oscillator.
+ */
+async function startScriptEngine() {
+  const { Engine } = await import('./worklet.js');
+  const engine = new Engine(audio.sampleRate, (m) => onEngine({ data: m }));
+  // one input: old Safari does not call onaudioprocess on a processor without inputs
+  const sp = audio.createScriptProcessor(1024, 1, 2);
+  sp.onaudioprocess = (e) => engine.render(e.outputBuffer.getChannelData(0), e.outputBuffer.getChannelData(1));
+  sp.connect(audio.destination);
+  // the rest of the page talks to `node` as to the worklet
+  node = {
+    port: { postMessage: (m) => engine.command(m) },
+    connect: () => sp.connect(audio.destination),
+    disconnect: () => sp.disconnect(),
+    sp, // kept referenced: Safari stops a processor that gets garbage-collected
+  };
+  engine.sendState();
 }
 
 /**

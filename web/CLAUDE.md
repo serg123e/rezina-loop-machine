@@ -76,7 +76,7 @@ gh workflow run web.yml --ref <branch>
   - `max`: the longest single render call that second, in whole ms. A 128-sample call has 2.7 ms at 48 kHz; spikes past that crackle even when `cpu` is low.
 - **`?test=sound`** runs the `npm test` sound check (`soundcheck.js`, shared with `test/soundcheck.mjs`) on the phone's main thread and lists the rows, FAIL in red. It needs no tap. It also counts jumps through the whole `Engine` (0 in Node). A FAIL on a phone where Node passes means that browser computes the synth differently.
 - **`?test=offline`** renders 4 s of a held Growl note with no deadline (`OfflineAudioContext`, the same worklet) and counts its jumps (samples that leap by more than 0.25; 0 on a desktop). Then, with the live synth disconnected, it plays three labelled 2 s stages: a plain browser sine, that note at ¼ level, that note at full level. A crackling sine blames the phone's browser output, not our code.
-- **Test switches for crackling phones** (with or without `debug`): `?rate=native` lets the device choose the sample rate (no resampling; frames then follow that rate). `?hint=balanced|playback|<seconds>` asks for a bigger output buffer than `interactive`. `?reopen=1` opens the context, plays one sample, closes it and opens a new one: the old iOS Safari workaround for a first context at the wrong hardware rate.
+- **Test switches for crackling phones** (with or without `debug`): `?rate=native` lets the device choose the sample rate (no resampling; frames then follow that rate). `?hint=balanced|playback|<seconds>` asks for a bigger output buffer than `interactive`. `?reopen=1` opens the context, plays one sample, closes it and opens a new one: the old iOS Safari workaround for a first context at the wrong hardware rate. `?engine=script` runs the same `Engine` on the page's thread through a `ScriptProcessorNode` (1024 samples, ~21 ms more latency, not counted in `lat`), with no AudioWorklet in the context at all.
 
 ## Differences from Android
 
@@ -91,6 +91,8 @@ gh workflow run web.yml --ref <branch>
 - **Old iPhone, iOS 15.8.7 Safari:** runs after the `roundPath` fix; latency `2.7+?+4.0`. **Every sound crackles, and it is not our code:**
   - `?test=sound` passes and the offline render has 0 jumps, so the samples are right.
   - Even the browser's own `OscillatorNode` sine crackles, also with `?rate=native&hint=playback`, in headphones too. Chrome there (also WebKit) crackles less often.
-  - In Safari the clicks are regular, ~48 per second over the whole test: once per ~1024 samples, a hardware buffer. That is the sign of the old iOS bug where the context's rate does not match the hardware. Next: `?reopen=1`.
+  - In Safari the clicks are regular, ~48 per second over the whole test: once per ~1024 samples, a hardware buffer.
+  - The context runs at `@48k` with or without `?rate=native`, and `?reopen=1` changes nothing, so it is not a wrong-rate context.
+  - Suspect: an AudioWorklet in the context at all (every test so far had one, even the plain sine). Next: `?engine=script`.
   - Unless that helps, that phone's Web Audio output is broken, and the page cannot work around it. Only one such device has been seen, so there is no warning in the app. The native iOS app needs iOS 18, so it is no way out either.
 - Not checked: the silent switch, the wake lock, CPU on a mid-range Android with several tracks.
