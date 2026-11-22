@@ -102,7 +102,7 @@ Each track plays one of nine sounds (`Mode`), three per family (`Kind`: bass, dr
 - **Session files store the mode's ordinal.** Only append to `Mode`; the first three are what old files called Bass / Drums / Lead.
 - **The sounds were picked by ear on [`docs/sound-lab.html`](docs/sound-lab.html)** (published as the "Звуки Rezina" artifact). Its JavaScript is the reference; `Synth.kt`, `ios/…/Synth.swift` and `web/synth.js` are line-by-line ports. To change a sound, change it on the page first (open the file in a browser and listen), then port the same lines to Kotlin, Swift and `web/`.
 - **`Mode.gain`** levels the instruments as on the page: 0.14 / the variant's RMS on the page's phrase × 0.9 (bass), 1 (drums), 0.65 (lead) × 1.5.
-- **`VoiceTest`** (`./gradlew --offline testDebugUnitTest`) renders a fixed gesture in every mode and checks the RMS against numbers from the page's JavaScript. If it fails, the port no longer sounds like what was chosen. The same check runs for iOS (`make soundcheck`) and the browser (`cd web && npm test`).
+- **Unit tests** (`./gradlew --offline testDebugUnitTest`): `EngineTest` (looper rules), `QuantizeTest`, `SessionsTest`, and **`VoiceTest`**, which renders a fixed gesture in every mode and checks the RMS against numbers from the page's JavaScript. If it fails, the port no longer sounds like what was chosen. The same check runs for iOS (`make soundcheck`) and the browser (`cd web && npm test`).
 - On the page the drum zones are 0.3/0.7; in the app they are 0.33/0.66, as on the screen grid.
 - Every `Voice` holds all nine instruments; inactive ones get a closed gate, ring out and sleep, so they cost nothing.
 
@@ -117,8 +117,14 @@ Each track plays one of nine sounds (`Mode`), three per family (`Kind`: bass, dr
 **Loop length**
 
 - The first take sets the loop length, from start to stop. A take shorter than 0.5 s is discarded. The maximum is 60 s.
-- After that, every take lasts exactly one loop from the current position and stops by itself.
+- After that, Rec waits for the next bar line (the cell reads "waiting", the button `● Rec in N`; a second tap cancels), and the take lasts exactly one loop and stops by itself. The part it has covered is red on the progress bar.
 - When all tracks are erased, the loop length resets.
+
+**Takes are tidied** (`Engine.comp`, `Quantize.kt`)
+
+- **Latency shift.** The player hears the loop late and their touch reaches us late, so a take lands late by both. Each take is recorded shifted back by output latency (measured with `AudioTrack.getTimestamp` once a second) + one block + 20 ms of touch. On the first take the last `comp` blocks are silence.
+- **Grid** ("Grid 1/16" / "Grid off", on by default, kept in shared preferences). Each track keeps `raw` (the take) and plays `frames`: drum hits and note starts pulled 70 % toward the loop's sixteenths; notes move whole, with a gate-off frame between them. Save writes `raw`, so the grid stays switchable. Rebuilt after a take, a load, a sound change and a switch.
+- Same rules and test cases as the web version (`web/CLAUDE.md`, "Takes").
 
 **Metronome**
 
@@ -133,7 +139,8 @@ Each track plays one of nine sounds (`Mode`), three per family (`Kind`: bass, dr
 - **Save** writes the current loop to `files/sessions/<date>.rez`. The file is gzip; the format is described in `Sessions.kt`. It holds the sample rate (format v2; v1 files without it still open), the track gestures, each track's mode and mute state, the loop length, the bars and the tempo.
 - Saving is refused during recording or count-in.
 - **Open…** shows a list over the band. Tap an entry to load it (this replaces everything); hold an entry to delete it.
-- Frames are tied to the phone's sample rate, so a file from another phone plays slightly faster or slower. The file records its rate, but loading does not convert yet ([`PORTING.md`](PORTING.md)).
+- The list's first row, **＋ Import .rez file…**, opens the system file picker (`ACTION_OPEN_DOCUMENT`, any type: a `.rez` has no MIME type of its own). The file is checked, saved as `<date> <name>.rez`, listed by its name and opened. Plain (ungzipped) files from the web version on an old Safari open too.
+- Frames are tied to the sample rate they were recorded at. A file from a phone with another rate is converted on load (`Session.atRate`): the same length in seconds, each drum hit kept once. v1 files (rate unknown) play as they are.
 
 **Playing live**
 
@@ -146,13 +153,15 @@ Each track plays one of nine sounds (`Mode`), three per family (`Kind`: bass, dr
 | Track | Tap: select. Tap the selected one: mute/unmute. Hold 0.6 s: erase. |
 | **Rec** | Record the selected track |
 | **−** / **+** | Tempo, before the first loop only |
-| **♩** | Metronome on/off |
+| **♩** | Tap: metronome on/off. Hold: the latency/CPU line under the readout |
 | **Sound** (shows the sound's name) | Change the selected track's sound, one of nine |
 | **Save** / **Open…** | Sessions |
+| **Grid** | Pull takes toward the sixteenths, or play them as recorded |
 
 ## Audio latency
 
 - **Buffer size.** The `AudioTrack` buffer is one of our blocks plus one device "burst" (`PROPERTY_OUTPUT_FRAMES_PER_BUFFER`). On an underrun it grows by one burst.
+- **On screen:** hold **♩** for `lat out+block=total @48k cpu N% max M` (ms). `out` is what is written but not yet heard, from `AudioTrack.getTimestamp`; `cpu` is the audio thread's share of real time; `max` its longest block (4 ms at 48 kHz).
 - **Measured numbers** are in logcat: `adb logcat -s rezina:I`. `size=` is the buffer in frames; `perf=1` means the low-latency mode was granted.
 - **Bluetooth headphones** add their own 150–250 ms, which the app cannot remove.
 
@@ -161,14 +170,16 @@ Each track plays one of nine sounds (`Mode`), three per family (`Kind`: bass, dr
 The README screenshots come from the emulator: AVD `Phone_API_36`, unlocked with PIN 1234.
 
 - **Start the emulator with `-gpu swiftshader_indirect`.** With the default host GPU, `screencap` returns black frames.
+- **After a cold boot the emulator can hang** on "System UI isn't responding" for minutes, with the lock screen in front and `screencap` black. `adb emu screenrecord screenshot <file>` still shows what is really on screen.
 - **Touches come from `input motionevent DOWN/MOVE/UP` and `input tap`.** Each `input` call takes about 0.3 s, so run each sequence in one `adb shell '…'` script.
 
 ## Files
 
-- `Engine.kt`: the audio thread and the looper. Voices write into two stereo buses (melodic, drums); `Master` mixes them. The UI and the sensors write only `@Volatile` fields. Everything that changes looper state goes through a command queue, so only the audio thread changes it.
+- `Engine.kt`: the audio thread and the looper; `renderBlock()` is one step, so `EngineTest` drives it without an `AudioTrack`. Voices write into two stereo buses (melodic, drums); `Master` mixes them. The UI and the sensors write only `@Volatile` fields. Everything that changes looper state goes through a command queue, so only the audio thread changes it.
 - `Voice.kt`: one track's sound: routes a `Frame` to the instrument of the track's mode. Audio thread only.
 - `Synth.kt`: one instrument per `Mode`, the `Master` bus and the DSP parts (filter, echo, reverb, delay line).
-- `Sessions.kt`: saving and loading session files.
+- `Sessions.kt`: saving, loading and importing session files; `Session.atRate` converts between sample rates.
+- `Quantize.kt`: the grid (a port of `web/quantize.js`).
 - `Mode.kt`: the nine sounds (`Mode`), their families (`Kind`: pitch range, drum zones) and the `Frame` layout.
 - `BandView.kt`: touches → band shape → `tension`/`bend`; the looper panel; drawing.
 - `tools/aab`, `tools/play`, `tools/play_api.py`: the Google Play bundle and Play Developer API (a copy of Skeeto's helpers).

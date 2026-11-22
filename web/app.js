@@ -311,7 +311,7 @@ function browserTap(x, y, hold) {
     return;
   }
   browser = null;
-  send({ t: 'load', session: entry.session });
+  loadSession(entry.session);
   toast(`Opened: ${entry.title}`);
 }
 
@@ -342,7 +342,7 @@ fileInput.addEventListener('change', async () => {
     toast('Could not save');
   }
   browser = null;
-  send({ t: 'load', session });
+  loadSession(session);
   toast(`Opened: ${label}`);
 });
 
@@ -356,12 +356,15 @@ async function openLinkedSession() {
   try {
     const r = await fetch(`sessions/${name}.rez`);
     if (!r.ok) throw new Error(r.status);
-    send({ t: 'load', session: await Sessions.decode(await r.arrayBuffer()) });
+    loadSession(await Sessions.decode(await r.arrayBuffer()));
     toast(`Opened: ${name}`);
   } catch {
     toast(`Could not open ${name}`);
   }
 }
+
+/** Replaces the looper with `s`, its frames converted to this context's rate (a file from a 44.1 kHz phone). */
+const loadSession = (s) => send({ t: 'load', session: Sessions.atRate(s, audio.sampleRate) });
 
 let toastText = null;
 let toastUntil = 0;

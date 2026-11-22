@@ -1,6 +1,7 @@
 package it.automate123.rezina
 
 import android.app.Activity
+import android.content.Intent
 import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
@@ -33,11 +34,21 @@ class MainActivity : Activity(), SensorEventListener {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         view = BandView(this, engine)
+        view.onImport = {
+            // no MIME filter: a .rez has no type of its own, most pickers would grey it out
+            startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("*/*"), PICK_REZ)
+        }
         setContentView(view)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             window.insetsController?.hide(WindowInsets.Type.systemBars())
         }
         sensors = getSystemService(SensorManager::class.java)
+    }
+
+    @Deprecated("Activity has no result API of its own; the app has no AndroidX")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == PICK_REZ && resultCode == RESULT_OK) data?.data?.let(view::importFrom)
     }
 
     override fun onResume() {
@@ -76,4 +87,8 @@ class MainActivity : Activity(), SensorEventListener {
     }
 
     override fun onAccuracyChanged(sensor: Sensor, accuracy: Int) = Unit
+
+    private companion object {
+        const val PICK_REZ = 1
+    }
 }

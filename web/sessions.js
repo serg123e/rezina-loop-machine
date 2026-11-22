@@ -4,7 +4,7 @@
 // Format v2: magic, version, Frame.SIZE, sample rate, loopLen, loopBeats, bpm, track count (int32 each);
 // then per track mode ordinal (byte), muted, hasContent (bool bytes) and, if present, loopLen × Frame.SIZE
 // float32. v1 is the same without the sample rate; it is still read (sampleRate 0 = unknown).
-// Loading does not convert between rates yet (see PORTING.md).
+// A file from another rate is converted on load (atRate).
 import { Frame, MODES } from './synth.js';
 
 const MAGIC = 0x52455a31; // "REZ1"
@@ -59,6 +59,38 @@ export async function decode(bytes) {
     tracks.push({ mode, muted, frames });
   }
   return { sampleRate, loopLen, loopBeats, bpm, tracks };
+}
+
+/**
+ * `s` as long in seconds at `rate`: one frame per block of that rate. Each new block takes the nearest
+ * old one; every drum hit is kept once, at its nearest block. Unknown rate (0) or the same: unchanged.
+ * Port of Android Session.atRate.
+ */
+export function atRate(s, rate) {
+  if (!(s.sampleRate > 0) || s.sampleRate === rate) return s;
+  const ratio = rate / s.sampleRate;
+  const len = Math.max(1, Math.round(s.loopLen * ratio));
+  const S = Frame.SIZE;
+  const tracks = s.tracks.map((t) => {
+    const f = t.frames;
+    if (!f) return t;
+    const out = new Float32Array(len * S);
+    for (let b = 0; b < len; b++) {
+      const src = Math.min(Math.trunc((b + 0.5) / ratio), s.loopLen - 1);
+      out.set(f.subarray(src * S, src * S + S), b * S);
+      out[b * S + Frame.EVENT] = Frame.EV_NONE;
+    }
+    const taken = new Uint8Array(len);
+    for (let b = 0; b < s.loopLen; b++) {
+      if (f[b * S + Frame.EVENT] !== Frame.EV_HIT) continue;
+      let q = Math.min(Math.round(b * ratio), len - 1);
+      for (let k = 0; taken[q] && k < len; k++) q = (q + 1) % len;
+      taken[q] = 1;
+      out.set(f.subarray(b * S + Frame.EVENT, b * S + Frame.EV_Y + 1), q * S + Frame.EVENT);
+    }
+    return { ...t, frames: out };
+  });
+  return { ...s, sampleRate: rate, loopLen: len, tracks };
 }
 
 // ---- storage: one IndexedDB store, key = file name as on Android (yyyy-MM-dd_HH-mm-ss) ----

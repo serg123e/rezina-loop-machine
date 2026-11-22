@@ -3,6 +3,7 @@ package it.automate123.rezina
 import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioManager
+import android.media.AudioTimestamp
 import android.media.AudioTrack
 import android.util.Log
 import java.util.concurrent.ConcurrentLinkedQueue
@@ -11,8 +12,11 @@ import kotlin.math.ceil
 import kotlin.math.exp
 import kotlin.math.sin
 
-/** One looper track: a recorded gesture plus the sound it is played with. */
-class Track(@Volatile var mode: Mode, val frames: FloatArray) {
+/**
+ * One looper track: a recorded gesture plus the sound it is played with. [raw] is the take as recorded
+ * (what Save writes); [frames] is what plays and what the ghosts show: [raw] on the grid, or a copy.
+ */
+class Track(@Volatile var mode: Mode, val frames: FloatArray, val raw: FloatArray) {
     @Volatile var hasContent = false
     @Volatile var muted = false
     @Volatile var recording = false
@@ -25,8 +29,11 @@ class Track(@Volatile var mode: Mode, val frames: FloatArray) {
  * sounds through a live voice with the selected track's [Mode]; while a track records, that gesture
  * is also written into it, one [Frame] per block.
  *
- * Loop length is set by the first take (start → stop); every later take records exactly one loop
- * starting wherever the playhead is, then stops by itself. Clearing every track resets the length.
+ * Loop length is set by the first take (start → stop); every later take waits for the next bar line,
+ * records exactly one loop, then stops by itself. Clearing every track resets the length.
+ *
+ * A take records into [Track.raw] shifted back by [comp] blocks: what the player hears is late by the
+ * output latency and their touch reaches us late too, so everything they play lands late by both.
  *
  * Metronome, while [metronome] is on: before the first loop — one bar of count-in clicks, recording starts
  * on the next downbeat, clicks go on while recording, and on stop the loop is rounded to whole bars.
@@ -38,12 +45,12 @@ class Track(@Volatile var mode: Mode, val frames: FloatArray) {
 class Engine(
     /** The device's native audio burst (AudioManager.PROPERTY_OUTPUT_FRAMES_PER_BUFFER). */
     private val burst: Int,
+    val sampleRate: Int = AudioTrack.getNativeOutputSampleRate(AudioManager.STREAM_MUSIC),
 ) {
-    val sampleRate = AudioTrack.getNativeOutputSampleRate(AudioManager.STREAM_MUSIC)
     val blocksPerSecond = sampleRate.toFloat() / BLOCK
     private val maxBlocks = (MAX_SECONDS * blocksPerSecond).toInt()
 
-    val tracks = DEFAULT_MODES.map { Track(it, FloatArray(maxBlocks * Frame.SIZE)) }
+    val tracks = DEFAULT_MODES.map { Track(it, FloatArray(maxBlocks * Frame.SIZE), FloatArray(maxBlocks * Frame.SIZE)) }
     @Volatile var selected = 0
 
     // live gesture
@@ -84,6 +91,32 @@ class Engine(
     /** Track waiting for its count-in to end, or -1. */
     @Volatile var countingIn = -1
         private set
+    /** Once a loop exists, Rec waits for the next bar line: the track waiting, or -1, and that line's block. */
+    @Volatile var armed = -1
+        private set
+    @Volatile var armedAt = 0
+        private set
+    /** Block where the current later take started, for the red recorded part on screen. */
+    @Volatile var recStart = 0
+        private set
+
+    /** Pull hits and note starts toward the sixteenths ([Quantize]); change it with [setGrid]. */
+    @Volatile var grid = true
+        private set
+    /**
+     * Blocks a take is shifted back by: [outputLatency] + our block + [TOUCH_S]. Set by the audio thread
+     * from the measured latency; tests set it directly.
+     */
+    @Volatile var comp = 0
+    /** Seconds from a sample written to the speaker (AudioTrack.getTimestamp), or -1 until known. */
+    @Volatile var outputLatency = -1f
+        private set
+    /** Share of real time spent rendering, over the last second (1 = the whole budget: crackles). */
+    @Volatile var cpu = 0f
+        private set
+    /** The longest single block render in the last second, ms. */
+    @Volatile var peakMs = 0f
+        private set
 
     val liveMode get() = tracks[selected].mode
 
@@ -91,6 +124,8 @@ class Engine(
     private data class ToggleRecord(val track: Int) : Command
     private data class Clear(val track: Int) : Command
     private class Load(val session: Session) : Command
+    private data class SetMode(val track: Int, val mode: Mode) : Command
+    private data class SetGrid(val on: Boolean) : Command
 
     private val commands = ConcurrentLinkedQueue<Command>()
     private val events = ConcurrentLinkedQueue<FloatArray>()
@@ -101,8 +136,16 @@ class Engine(
     fun toggleRecord() = commands.add(ToggleRecord(selected))
     fun clear(track: Int) = commands.add(Clear(track))
 
-    /** Replaces everything with [session] (applied on the audio thread). */
-    fun load(session: Session) = commands.add(Load(session))
+    /** Replaces everything with [session] (applied on the audio thread), converted to this phone's rate. */
+    fun load(session: Session) = commands.add(Load(session.atRate(sampleRate)))
+
+    /** A track's sound; a recorded track is replayed with it (and put on the grid of its kind). */
+    fun setMode(track: Int, mode: Mode) = commands.add(SetMode(track, mode))
+
+    fun setGrid(on: Boolean) {
+        grid = on // shown at once; the tracks are rebuilt on the audio thread
+        commands.add(SetGrid(on))
+    }
 
     /**
      * Copy of the current loop for saving, or null when there is nothing to save or a take is in
@@ -112,7 +155,7 @@ class Engine(
         val len = loopLen
         if (len == 0 || countingIn >= 0 || tracks.any { it.recording }) return null
         return Session(sampleRate, len, loopBeats, bpm, tracks.map { t ->
-            Session.TrackData(t.mode, t.muted, if (t.hasContent) t.frames.copyOf(len * Frame.SIZE) else null)
+            Session.TrackData(t.mode, t.muted, if (t.hasContent) t.raw.copyOf(len * Frame.SIZE) else null)
         })
     }
 
@@ -162,81 +205,118 @@ class Engine(
         Log.i(TAG, "sr=$sampleRate burst=$burst minBuf=${minBuf / 4} capacity=${out.bufferCapacityInFrames} " +
             "size=${out.bufferSizeInFrames} perf=${out.performanceMode}")
 
-        val sr = sampleRate.toFloat()
-        val liveVoice = Voice(sr)
-        val voices = tracks.map { Voice(sr) }
-        val live = FloatArray(Frame.SIZE)
-        val toneL = FloatArray(BLOCK)
-        val toneR = FloatArray(BLOCK)
-        val drumL = FloatArray(BLOCK)
-        val drumR = FloatArray(BLOCK)
-        val mix = FloatArray(2 * BLOCK) // interleaved stereo
-        val master = Master(sr)
-        val click = Click(sr)
-
+        val ts = AudioTimestamp()
+        var written = 0L
+        var busyNs = 0L
+        var peakNs = 0L
+        var measured = 0
         while (running) {
-            while (true) apply(commands.poll() ?: break)
-            if (countingIn >= 0 && clickBlocks == barBlocks) {
-                startRecording(tracks[countingIn])
-                countingIn = -1
-            }
-
-            live[Frame.TENSION] = tension
-            live[Frame.BEND] = bend
-            live[Frame.GATE] = if (gate) 1f else 0f
-            live[Frame.TILT_X] = (tiltX + aim).coerceIn(-1f, 1f)
-            live[Frame.TILT_Y] = tiltY
-            live[Frame.SHAKE] = shake
-            shape.copyInto(live, Frame.COUNT)
-            live[Frame.EVENT] = Frame.EV_NONE
-            events.poll()?.copyInto(live, Frame.EVENT)
-
-            toneL.fill(0f)
-            toneR.fill(0f)
-            drumL.fill(0f)
-            drumR.fill(0f)
-            val tempo = bpm
-            var kicked = liveVoice.render(toneL, toneR, drumL, drumR, live, 0, tracks[selected].mode, tempo)
-
-            val writeAt = (if (loopLen == 0) recCount else pos) * Frame.SIZE
-            tracks.forEachIndexed { i, t ->
-                when {
-                    t.recording -> {
-                        System.arraycopy(live, 0, t.frames, writeAt, Frame.SIZE)
-                        t.level = levelOf(live, 0)
-                    }
-                    t.hasContent && loopLen > 0 -> {
-                        val o = pos * Frame.SIZE
-                        t.level = if (t.muted) 0f else levelOf(t.frames, o)
-                        if (!t.muted && voices[i].render(toneL, toneR, drumL, drumR, t.frames, o, t.mode, tempo)) kicked = true
-                    }
-                    else -> t.level = 0f
-                }
-            }
-
-            when {
-                barBlocks > 0 -> click.tick(clickBlocks++.toLong() * BLOCK, barBlocks * BLOCK / 4f)
-                metronome && loopLen > 0 -> click.tick(pos.toLong() * BLOCK, loopLen.toFloat() * BLOCK / loopBeats)
-            }
-            master.render(toneL, toneR, drumL, drumR, kicked, mix)
-            click.render(mix)
-
-            if (loopLen > 0) pos = (pos + 1) % loopLen
-            tracks.firstOrNull { it.recording }?.let { t ->
-                recCount++
-                val limit = if (loopLen == 0) maxBlocks else loopLen
-                if (recCount >= limit) stopRecording(t)
-            }
-
+            val t0 = System.nanoTime()
+            renderBlock()
+            val took = System.nanoTime() - t0
+            busyNs += took
+            peakNs = maxOf(peakNs, took)
             out.write(mix, 0, mix.size, AudioTrack.WRITE_BLOCKING)
+            written += BLOCK
             if (out.underrunCount > underruns) {
                 underruns = out.underrunCount
                 val size = out.setBufferSizeInFrames(out.bufferSizeInFrames + burst)
                 Log.i(TAG, "underrun #$underruns → buffer $size frames")
             }
+            if (++measured >= blocksPerSecond) {
+                cpu = busyNs / 1e9f
+                peakMs = peakNs / 1e6f
+                busyNs = 0
+                peakNs = 0
+                measured = 0
+                // what is written but not yet heard: our buffer plus the device's own path to the speaker
+                if (out.getTimestamp(ts)) {
+                    val heard = ts.framePosition + (System.nanoTime() - ts.nanoTime) * sampleRate / 1_000_000_000L
+                    outputLatency = ((written - heard).coerceAtLeast(0) / sampleRate.toFloat())
+                }
+                // until the timestamp is known, our own buffer is the best guess
+                val heardLate = if (outputLatency >= 0) outputLatency else out.bufferSizeInFrames / sampleRate.toFloat()
+                comp = Math.round((heardLate + BLOCK / sampleRate.toFloat() + TOUCH_S) * blocksPerSecond)
+            }
         }
         out.stop()
         out.release()
+    }
+
+    // audio thread state
+    private val sr = sampleRate.toFloat()
+    private val liveVoice = Voice(sr)
+    private val voices = tracks.map { Voice(sr) }
+    private val live = FloatArray(Frame.SIZE)
+    private val toneL = FloatArray(BLOCK)
+    private val toneR = FloatArray(BLOCK)
+    private val drumL = FloatArray(BLOCK)
+    private val drumR = FloatArray(BLOCK)
+    /** The last rendered block, interleaved stereo. */
+    val mix = FloatArray(2 * BLOCK)
+    private val master = Master(sr)
+    private val click = Click(sr)
+
+    /** One block into [mix]: commands, the looper step, the voices. Audio thread only (or a test). */
+    fun renderBlock() {
+        while (true) apply(commands.poll() ?: break)
+        if (countingIn >= 0 && clickBlocks == barBlocks) {
+            startRecording(tracks[countingIn])
+            countingIn = -1
+        }
+        if (armed >= 0 && pos == armedAt) {
+            startRecording(tracks[armed])
+            recStart = pos
+            armed = -1
+        }
+
+        live[Frame.TENSION] = tension
+        live[Frame.BEND] = bend
+        live[Frame.GATE] = if (gate) 1f else 0f
+        live[Frame.TILT_X] = (tiltX + aim).coerceIn(-1f, 1f)
+        live[Frame.TILT_Y] = tiltY
+        live[Frame.SHAKE] = shake
+        shape.copyInto(live, Frame.COUNT)
+        live[Frame.EVENT] = Frame.EV_NONE
+        events.poll()?.copyInto(live, Frame.EVENT)
+
+        toneL.fill(0f)
+        toneR.fill(0f)
+        drumL.fill(0f)
+        drumR.fill(0f)
+        val tempo = bpm
+        var kicked = liveVoice.render(toneL, toneR, drumL, drumR, live, 0, tracks[selected].mode, tempo)
+
+        // the take is shifted back by `comp` blocks; on the first take the earliest ones fall before its start
+        val writeBlock = if (loopLen == 0) recCount - comp else ((pos - comp % loopLen) + loopLen) % loopLen
+        tracks.forEachIndexed { i, t ->
+            when {
+                t.recording -> {
+                    if (writeBlock >= 0) System.arraycopy(live, 0, t.raw, writeBlock * Frame.SIZE, Frame.SIZE)
+                    t.level = levelOf(live, 0)
+                }
+                t.hasContent && loopLen > 0 -> {
+                    val o = pos * Frame.SIZE
+                    t.level = if (t.muted) 0f else levelOf(t.frames, o)
+                    if (!t.muted && voices[i].render(toneL, toneR, drumL, drumR, t.frames, o, t.mode, tempo)) kicked = true
+                }
+                else -> t.level = 0f
+            }
+        }
+
+        when {
+            barBlocks > 0 -> click.tick(clickBlocks++.toLong() * BLOCK, barBlocks * BLOCK / 4f)
+            metronome && loopLen > 0 -> click.tick(pos.toLong() * BLOCK, loopLen.toFloat() * BLOCK / loopBeats)
+        }
+        master.render(toneL, toneR, drumL, drumR, kicked, mix)
+        click.render(mix)
+
+        if (loopLen > 0) pos = (pos + 1) % loopLen
+        tracks.firstOrNull { it.recording }?.let { t ->
+            recCount++
+            val limit = if (loopLen == 0) maxBlocks else loopLen
+            if (recCount >= limit) stopRecording(t)
+        }
     }
 
     private fun apply(c: Command) {
@@ -245,15 +325,21 @@ class Engine(
                 val t = tracks[c.track]
                 when {
                     t.recording -> stopRecording(t)
-                    countingIn >= 0 -> stopClicks() // second tap during count-in cancels it
+                    countingIn >= 0 || armed >= 0 -> stopClicks() // a second tap while waiting cancels
                     else -> {
                         tracks.filter { it.recording }.forEach(::stopRecording)
-                        if (loopLen == 0 && metronome) {
-                            barBlocks = Math.round(4 * 60f / bpm * blocksPerSecond)
-                            clickBlocks = 0
-                            countingIn = c.track
-                        } else {
-                            startRecording(t)
+                        when {
+                            loopLen == 0 && metronome -> {
+                                barBlocks = Math.round(4 * 60f / bpm * blocksPerSecond)
+                                clickBlocks = 0
+                                countingIn = c.track
+                            }
+                            // a take over a loop starts on the next bar line and lasts one loop
+                            loopLen > 0 -> {
+                                armed = c.track
+                                armedAt = nextBar(pos)
+                            }
+                            else -> startRecording(t)
                         }
                     }
                 }
@@ -267,25 +353,47 @@ class Engine(
                     t.mode = d?.mode ?: t.mode
                     t.muted = d?.muted ?: false
                     t.hasContent = d?.frames != null
-                    d?.frames?.let { f -> f.copyInto(t.frames, endIndex = minOf(f.size, t.frames.size)) }
+                    d?.frames?.let { f -> f.copyInto(t.raw, endIndex = minOf(f.size, t.raw.size)) }
                 }
                 loopLen = minOf(s.loopLen, maxBlocks)
                 loopBeats = s.loopBeats
                 bpm = s.bpm
                 pos = 0
+                tracks.forEach(::applyGrid)
             }
             is Clear -> {
                 val t = tracks[c.track]
-                if (countingIn == c.track) stopClicks()
+                if (countingIn == c.track || armed == c.track) stopClicks()
                 t.recording = false
                 t.hasContent = false
                 if (tracks.none { it.hasContent || it.recording }) {
+                    stopClicks() // no loop, no bar line to wait for
                     loopLen = 0
                     loopBeats = 0
                     pos = 0
                 }
             }
+            is SetMode -> {
+                tracks[c.track].mode = c.mode
+                applyGrid(tracks[c.track])
+            }
+            is SetGrid -> tracks.forEach(::applyGrid)
         }
+    }
+
+    /** The first bar line at or after block [p] (bars are whole parts of the loop). */
+    private fun nextBar(p: Int): Int {
+        val bars = maxOf(1, Math.round(loopBeats / 4f))
+        for (k in 0 until bars) {
+            val b = Math.round(k.toLong() * loopLen / bars.toFloat())
+            if (b >= p) return b
+        }
+        return 0 // past the last line: the loop's start
+    }
+
+    /** Rebuilds what [t] plays from its raw take: on the grid, or a plain copy. */
+    private fun applyGrid(t: Track) {
+        if (t.hasContent && loopLen > 0) Quantize.apply(t.raw, t.frames, loopLen, loopBeats, t.mode.drums, grid)
     }
 
     private fun startRecording(t: Track) {
@@ -298,12 +406,14 @@ class Engine(
         if (loopLen == 0) {
             val bar = barBlocks
             stopClicks()
+            // the last `comp` blocks were never written (the take is shifted back by them): silence
+            t.raw.fill(0f, maxOf(0, recCount - comp) * Frame.SIZE, recCount * Frame.SIZE)
             // the first take sets the loop; a too-short one is a mis-tap, drop it
             if (recCount < blocksPerSecond * MIN_LOOP_SECONDS) return
             if (bar > 0) {
                 val bars = Math.round(recCount.toFloat() / bar).coerceIn(1, maxBlocks / bar)
                 // rounded up → the tail was never played: silence, not leftovers of an old take
-                if (bars * bar > recCount) t.frames.fill(0f, recCount * Frame.SIZE, bars * bar * Frame.SIZE)
+                if (bars * bar > recCount) t.raw.fill(0f, recCount * Frame.SIZE, bars * bar * Frame.SIZE)
                 loopLen = bars * bar
                 loopBeats = bars * 4
             } else {
@@ -315,11 +425,14 @@ class Engine(
             pos = 0
         }
         t.hasContent = true
+        applyGrid(t)
     }
 
+    /** Cancels any wait for a take: the count-in, or a take armed for the next bar line. */
     private fun stopClicks() {
         countingIn = -1
         barBlocks = 0
+        armed = -1
     }
 
     private fun levelOf(f: FloatArray, o: Int) =
@@ -369,6 +482,8 @@ class Engine(
         private const val TAG = "rezina"
         private const val MAX_SECONDS = 60
         private const val MIN_LOOP_SECONDS = 0.5f
+        /** Touch to our event: a frame or two of the touch screen (an estimate: Android does not report it). */
+        private const val TOUCH_S = 0.02f
         private val DEFAULT_MODES = listOf(Mode.BASS, Mode.DRUMS, Mode.LEAD, Mode.LEAD)
     }
 }

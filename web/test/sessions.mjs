@@ -1,6 +1,6 @@
 // .rez files: a round trip, and the bytes checked field by field with Node's own gunzip (Android's layout).
 import { gunzipSync } from 'node:zlib';
-import { encode, decode } from '../sessions.js';
+import { encode, decode, atRate } from '../sessions.js';
 import { Frame } from '../synth.js';
 
 let failed = false;
@@ -32,6 +32,18 @@ expect('unknown sound refused', threw);
 threw = false;
 try { await decode(await encode({ ...s, loopBeats: 0 })); } catch { threw = true; }
 expect('a loop with no beats refused', threw);
+// a file from a 44.1 kHz phone keeps its length in seconds; a hit is kept once, at its nearest block
+{
+  const f = new Float32Array(441 * Frame.SIZE);
+  for (let b = 0; b < 441; b++) f[b * Frame.SIZE] = b / 441;
+  f[100 * Frame.SIZE + Frame.EVENT] = Frame.EV_HIT;
+  const c = atRate({ sampleRate: 44100, loopLen: 441, loopBeats: 4, bpm: 100, tracks: [{ mode: 1, muted: false, frames: f }] }, 48000);
+  const hits = []; for (let b = 0; b < 480; b++) if (c.tracks[0].frames[b * Frame.SIZE + Frame.EVENT] === Frame.EV_HIT) hits.push(b);
+  expect('44.1 → 48 kHz: 441 → 480 blocks, the hit at 109', c.loopLen === 480 && c.sampleRate === 48000 && hits.join() === '109');
+  expect('…halfway is still halfway', Math.abs(c.tracks[0].frames[240 * Frame.SIZE] - 0.5) < 0.01);
+  const v1 = { sampleRate: 0, loopLen: 2, tracks: [] };
+  expect('rate unknown: left as it is', atRate(v1, 48000) === v1);
+}
 // an old Safari (no CompressionStream) stores plain bytes; decode reads them too
 const CS = globalThis.CompressionStream;
 delete globalThis.CompressionStream;

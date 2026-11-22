@@ -55,7 +55,7 @@ gh workflow run web.yml --ref <branch>
 - **`quantize.js`**: the grid (below).
 - **`?session=demo`** opens `sessions/demo.rez` on the first tap: the sound lab's "Всё вместе" phrase (Growl, 808, Pluck; 4 bars at 100 bpm). It is not added to the list. `node tools/make-demo-session.mjs` rebuilds it from `docs/sound-lab.html`; rebuild after changing the page's phrase. Other files in `sessions/` open the same way by name (`[a-z0-9-]`).
 
-## Takes: latency shift and grid (web only so far, see PORTING.md)
+## Takes: latency shift and grid (Android has them too; iOS not yet, see PORTING.md)
 
 - **Latency shift.** The player hears the loop late and plays along with that, and their touch arrives later still, so every take lands late by both. Takes are recorded shifted back by that much (`Engine.comp`, in blocks).
   - The page sends `{t:'latency', seconds}` = `baseLatency` + `outputLatency` (10 ms where the browser does not say) + our block + the ScriptProcessor buffer if any + 15 ms of touch. It re-sends every 2 s if the figure moves.
@@ -65,15 +65,16 @@ gh workflow run web.yml --ref <branch>
   - `quantize.js`, sixteenths of the loop's own grid (`loopLen / (loopBeats × 4)` blocks), 70 % of the way (`STRENGTH`):
     - drums: each hit moves to its block (`quantizeHits`);
     - bass and lead: each note (a gate-on run) moves whole, start pulled, slides and vibrato kept, at least one gate-off frame between notes so the filter retriggers (`quantizeNotes`).
-  - Save writes `raw`, so the grid stays switchable after a reload, and the file format did not change. Android and iOS open such files as played, without the grid.
+  - Save writes `raw`, so the grid stays switchable after a reload, and the file format did not change. iOS opens such files as played, without the grid.
   - Tests: `test/quantize.mjs`.
 
-## Takes start on a bar line (web only so far, see PORTING.md)
+## Takes start on a bar line (Android too; iOS not yet)
 
 - Once a loop exists, Rec arms the selected track (`Engine.armed`, `armedAt` = `nextBar(pos)`). The take starts when the playhead reaches that bar line and lasts one loop, as before.
 - While armed, the cell pulses and reads "waiting", and the Rec button counts the beats down (`● Rec in 3`). A second tap cancels (`stopClicks` clears the arm too).
 - While a take records, the part it has covered is red on the progress bar (`recStart` + `recCount`).
 - The first take is unchanged: count-in with the metronome, or at once without it.
+- Erasing every track while a take waits ends the wait (no loop, no bar line).
 
 ## Browser specifics
 
@@ -81,7 +82,7 @@ gh workflow run web.yml --ref <branch>
 - **iOS motion permission** (`DeviceMotionEvent.requestPermission`) is asked when the first tap's finger lifts (`touchend`).
   - From `pointerdown` Safari refuses it with no prompt. Until 2026-11-22 it was asked there, and tilt and shake never worked on iPhones.
   - A refusal for that reason asks again on the next lift. A "Don't allow" sticks until Safari is restarted.
-- **`AudioContext({sampleRate: 48000})`**, so frames are 4 ms as on Android and `.rez` files play at the same speed. If the hardware runs at another rate, the browser resamples.
+- **`AudioContext({sampleRate: 48000})`**, so frames are 4 ms as on Android and `.rez` files play at the same speed. If the hardware runs at another rate, the browser resamples. A file recorded at another rate (a 44.1 kHz Android phone, or `?rate=native`) is converted on load (`atRate` in `sessions.js`, a port of `Session.atRate`).
 - **Motion.** `accelerationIncludingGravity` goes through MainActivity's filter, with the constants rescaled from Android's 50 Hz to the event interval.
   - iOS Safari reports the opposite sign of Android and the spec, so the values are negated there (detected by `requestPermission`).
   - Portrait only: in landscape on a touch screen the app asks to turn the phone upright.
@@ -105,7 +106,7 @@ gh workflow run web.yml --ref <branch>
 
 ## Differences from Android
 
-- The text readout (sound, stretch, tilt) sits on a see-through plate, and the note grid runs under it up to the panel. Android starts the grid below the text. Ring names that would fall under the plate are not drawn (`plate()`, `labelRing`).
+- The latency/CPU line: `?debug=1` here, hold ♩ on Android. The output part comes from the browser's `outputLatency`; Android measures it with `AudioTrack.getTimestamp`.
 
 ## Tested on devices (2026-11-22)
 

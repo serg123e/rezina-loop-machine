@@ -9,11 +9,14 @@ import android.graphics.Path
 import android.graphics.PointF
 import android.graphics.RectF
 import android.graphics.Typeface
+import android.net.Uri
 import android.os.SystemClock
+import android.provider.OpenableColumns
 import android.view.MotionEvent
 import android.view.View
 import android.widget.Toast
 import java.io.File
+import java.io.IOException
 import kotlin.concurrent.thread
 import kotlin.math.PI
 import kotlin.math.atan2
@@ -30,7 +33,9 @@ import kotlin.math.sqrt
  * Panel: tap a track — select it (tap the selected one — mute/unmute), hold — erase it;
  * «Rec» records the selected track; «Sound» switches its instrument (works on a recorded track too:
  * the gesture is replayed with the new sound); «−» «+» — tempo before the first loop, «♩» — metronome on/off;
- * «Save» writes the loop to a file, «Open» lists saved ones (tap — load, hold — delete).
+ * «Save» writes the loop to a file, «Open» lists saved ones (tap — load, hold — delete; the first row
+ * imports a .rez file), «Grid» pulls hits and note starts toward the sixteenths. Hold «♩»: latency and CPU
+ * under the readout.
  *
  * Band: fingers are points it passes through — 1 finger: from the peg at the bottom to the finger;
  * 2+ fingers: the two farthest-apart are the ends, the rest bend it. Length → pitch, crookedness →
@@ -54,6 +59,7 @@ class BandView(context: Context, private val engine: Engine) : View(context) {
     private val modeButton = RectF()
     private val saveButton = RectF()
     private val openButton = RectF()
+    private val gridButton = RectF()
     private val slowerButton = RectF()
     private val tempoButton = RectF()
     private val fasterButton = RectF()
@@ -66,8 +72,15 @@ class BandView(context: Context, private val engine: Engine) : View(context) {
     private var lastHit = 0f
     private val sessionsDir = File(context.filesDir, "sessions")
     private val listTop get() = panelBottom + 110f
-    /** Below the text readout; the note grid is clipped to start here. */
-    private var gridTop = 0f
+    private val prefs = context.getSharedPreferences("rezina", Context.MODE_PRIVATE)
+    /** Hold ♩: the latency/CPU line under the readout. Remembered. */
+    private var debug = prefs.getBoolean("debug", false)
+    /** Opens the system file picker; MainActivity hands the file back to [importFrom]. */
+    var onImport: (() -> Unit)? = null
+
+    init {
+        engine.setGrid(prefs.getBoolean("grid", true))
+    }
 
     private val bandPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
@@ -122,8 +135,11 @@ class BandView(context: Context, private val engine: Engine) : View(context) {
             x = r.right + pad
         }
         val sy = recButton.bottom + pad
-        saveButton.set(pad, sy, w / 2f - pad / 2, sy + h * 0.045f)
-        openButton.set(w / 2f + pad / 2, sy, w - pad, sy + h * 0.045f)
+        // Save | Open… | Grid
+        val third = (w - 4 * pad) / 3
+        saveButton.set(pad, sy, pad + third, sy + h * 0.045f)
+        openButton.set(2 * pad + third, sy, 2 * pad + 2 * third, sy + h * 0.045f)
+        gridButton.set(3 * pad + 2 * third, sy, w - pad, sy + h * 0.045f)
         panelBottom = saveButton.bottom + 16f
     }
 
@@ -179,10 +195,20 @@ class BandView(context: Context, private val engine: Engine) : View(context) {
             recButton.contains(x, y) -> engine.toggleRecord()
             slowerButton.contains(x, y) -> changeTempo(-TEMPO_STEP)
             fasterButton.contains(x, y) -> changeTempo(TEMPO_STEP)
+            tempoButton.contains(x, y) && hold -> {
+                debug = !debug
+                prefs.edit().putBoolean("debug", debug).apply()
+            }
             tempoButton.contains(x, y) -> engine.metronome = !engine.metronome
-            modeButton.contains(x, y) -> engine.tracks[engine.selected].let { it.mode = it.mode.next() }
+            modeButton.contains(x, y) -> engine.setMode(engine.selected, engine.liveMode.next())
             saveButton.contains(x, y) -> save()
             openButton.contains(x, y) -> openBrowser()
+            gridButton.contains(x, y) -> {
+                val on = !engine.grid
+                engine.setGrid(on)
+                prefs.edit().putBoolean("grid", on).apply()
+                toast(if (on) "Grid on: hits and note starts pulled to 1/16" else "Grid off: played as recorded")
+            }
         }
     }
 
@@ -205,11 +231,17 @@ class BandView(context: Context, private val engine: Engine) : View(context) {
         }
     }
 
+    /** Row 0 of the list is "Import .rez file…"; the saved loops follow. */
     private fun browserTap(x: Float, y: Float, hold: Boolean) {
         val entries = browser ?: return
-        val i = ((y - listTop) / ITEM_H).toInt()
-        if (y < listTop || i !in entries.indices) {
+        val i = floor((y - listTop) / ITEM_H).toInt() - 1
+        if (y < listTop || i >= entries.size) {
             browser = null // tap outside the list closes it
+            return
+        }
+        if (i < 0) {
+            browser = null
+            onImport?.invoke()
             return
         }
         val entry = entries[i]
@@ -220,9 +252,30 @@ class BandView(context: Context, private val engine: Engine) : View(context) {
         }
         browser = null
         thread {
-            val s = Sessions.load(entry.file)
+            val s = try { Sessions.load(entry.file) } catch (e: IOException) { null }
+            if (s != null) engine.load(s)
+            post { toast(if (s != null) "Opened: ${entry.title}" else "Could not open") }
+        }
+    }
+
+    /** A .rez picked in the system's file picker: saved under its own name and opened. */
+    fun importFrom(uri: Uri) {
+        thread {
+            val name = context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
+                ?.use { c -> if (c.moveToFirst()) c.getString(0) else null }
+                ?.removeSuffix(".rez")?.removeSuffix(".REZ") ?: "imported"
+            val s = try {
+                context.contentResolver.openInputStream(uri)?.let(Sessions::read)
+            } catch (e: IOException) {
+                null
+            } ?: run { post { toast("Not a Rezina loop") }; return@thread }
+            try {
+                Sessions.save(sessionsDir, s, name)
+            } catch (e: IOException) {
+                post { toast("Could not save") }
+            }
             engine.load(s)
-            post { toast("Opened: ${entry.title}") }
+            post { toast("Opened: $name") }
         }
     }
 
@@ -288,6 +341,7 @@ class BandView(context: Context, private val engine: Engine) : View(context) {
         drawPanel(canvas)
 
         drawNoteGrid(canvas)
+        drawReadout(canvas)
         fill.color = Color.GRAY
         canvas.drawCircle(peg.x, peg.y, 18f, fill)
         drawGhosts(canvas)
@@ -296,6 +350,13 @@ class BandView(context: Context, private val engine: Engine) : View(context) {
 
         drawBand(canvas, band, engine.tension, hot(engine.tension))
 
+        browser?.let { drawBrowser(canvas, it) }
+
+        postInvalidateOnAnimation()
+    }
+
+    /** The sound and the sensors, as text over the note grid. */
+    private fun drawReadout(canvas: Canvas) {
         val mode = engine.liveMode
         val t = engine.tension
         val sound = if (!engine.gate) {
@@ -311,12 +372,31 @@ class BandView(context: Context, private val engine: Engine) : View(context) {
             "stretch %4.2f  bend %4.2f".format(t, engine.bend),
             "tilt ↔ %5.2f  ↕ %4.2f  shake %4.2f".format((engine.tiltX + engine.aim).coerceIn(-1f, 1f), engine.tiltY, engine.shake),
         )
+            .let { if (debug) it + latencyLine() else it } // plate() counts these lines
+        // a see-through plate: the note rings stay visible behind the text
+        fill.color = Color.argb(150, 16, 16, 22)
+        canvas.drawRoundRect(plate(), 16f, 16f, fill)
         lines.forEachIndexed { i, s -> canvas.drawText(s, 24f, panelBottom + 50f + i * 46f, hud) }
-        gridTop = panelBottom + 50f + lines.size * 46f
+    }
 
-        browser?.let { drawBrowser(canvas, it) }
+    /** Under the readout: 3 lines, or 4 with the latency line. */
+    private fun plate(): RectF {
+        val lines = if (debug) 4 else 3
+        return RectF(12f, panelBottom + 10f, width - 12f, panelBottom + 10f + 50f + (lines - 1) * 46f + 26f)
+    }
 
-        postInvalidateOnAnimation()
+    /**
+     * What sits between our samples and the speaker: `out` (our AudioTrack buffer and the device's path,
+     * from AudioTrack.getTimestamp) + our block = total, ms; `?` until the timestamp is known.
+     * `cpu`: the audio thread's share of real time (near 100 % it crackles); `max`: its longest block, ms
+     * (a block has 4 ms at 48 kHz).
+     */
+    private fun latencyLine(): String {
+        val out = engine.outputLatency
+        val own = Engine.BLOCK * 1000f / engine.sampleRate
+        val outText = if (out >= 0) "%.1f".format(out * 1000) else "?"
+        val total = if (out >= 0) "%.1f".format(out * 1000 + own) else "?"
+        return "lat $outText+%.1f=$total @%dk cpu %d%% max %.1f".format(own, engine.sampleRate / 1000, Math.round(engine.cpu * 100), engine.peakMs)
     }
 
     /** Band length (from the peg, one finger) that gives [tension]. */
@@ -331,7 +411,7 @@ class BandView(context: Context, private val engine: Engine) : View(context) {
         val mode = engine.liveMode
         val c = peg
         canvas.save()
-        canvas.clipRect(0f, gridTop, width.toFloat(), height.toFloat())
+        canvas.clipRect(0f, panelBottom, width.toFloat(), height.toFloat())
         if (mode.drums) {
             var inner = 0f
             DRUM_ZONES.forEachIndexed { i, (upTo, name) ->
@@ -376,6 +456,7 @@ class BandView(context: Context, private val engine: Engine) : View(context) {
         val dx = peg.x - LABEL_X
         val y = if (r > dx) peg.y - sqrt(r * r - dx * dx) else peg.y
         val x = if (r > dx) LABEL_X else peg.x - r + 8f
+        if (y - 8f < plate().bottom + 30f) return // the ring shows through the readout, its name would collide
         canvas.drawText(text, x, y - 8f, gridLabel)
     }
 
@@ -390,9 +471,18 @@ class BandView(context: Context, private val engine: Engine) : View(context) {
         hud.color = Color.WHITE
         canvas.drawText("Saved loops: tap — open, hold — delete", 24f, panelBottom + 60f, hud)
         hud.color = Color.LTGRAY
-        if (entries.isEmpty()) canvas.drawText("Nothing saved yet", 24f, listTop + 60f, hud)
-        entries.forEachIndexed { i, entry ->
-            val top = listTop + i * ITEM_H
+        border.strokeWidth = 3f
+        border.alpha = 110
+        canvas.drawRoundRect(16f, listTop, width - 16f, listTop + ITEM_H - 16f, 16f, 16f, border)
+        border.strokeWidth = 5f
+        border.alpha = 255
+        label.textAlign = Paint.Align.LEFT
+        label.textSize = 40f
+        canvas.drawText("＋ Import .rez file…", 40f, listTop + 75f, label)
+        label.textAlign = Paint.Align.CENTER
+        if (entries.isEmpty()) canvas.drawText("Nothing saved yet", 40f, listTop + ITEM_H + 60f, hud)
+        entries.forEachIndexed { k, entry ->
+            val top = listTop + (k + 1) * ITEM_H
             if (top + ITEM_H > height) return@forEachIndexed
             fill.color = Color.rgb(42, 42, 52)
             canvas.drawRoundRect(16f, top, width - 16f, top + ITEM_H - 16f, 16f, 16f, fill)
@@ -412,7 +502,7 @@ class BandView(context: Context, private val engine: Engine) : View(context) {
         engine.tracks.forEachIndexed { i, tr ->
             val r = cells[i]
             fill.color = when {
-                tr.recording || engine.countingIn == i -> if (pulse) Color.rgb(200, 40, 40) else Color.rgb(140, 30, 30)
+                tr.recording || engine.countingIn == i || engine.armed == i -> if (pulse) Color.rgb(200, 40, 40) else Color.rgb(140, 30, 30)
                 !tr.hasContent -> Color.rgb(42, 42, 52)
                 tr.muted -> Color.rgb(30, 30, 34)
                 else -> dim(TRACK_COLORS[i])
@@ -427,6 +517,7 @@ class BandView(context: Context, private val engine: Engine) : View(context) {
             val state = when {
                 tr.recording -> "● rec"
                 engine.countingIn == i -> "count-in"
+                engine.armed == i -> "waiting"
                 !tr.hasContent -> "empty"
                 tr.muted -> "muted"
                 else -> "playing"
@@ -450,6 +541,15 @@ class BandView(context: Context, private val engine: Engine) : View(context) {
         } else if (loopLen > 0) {
             fill.color = Color.rgb(90, 160, 255)
             canvas.drawRect(progress.left, progress.top, progress.left + progress.width() * engine.pos / loopLen, progress.bottom, fill)
+            // a take in progress: what it has recorded so far is red, bar after bar
+            if (engine.tracks.any { it.recording }) {
+                fill.color = Color.rgb(230, 60, 60)
+                val from = engine.recStart
+                val n = minOf(engine.recCount, loopLen)
+                fun span(a: Int, b: Int) = canvas.drawRect(progress.left + progress.width() * a / loopLen, progress.top,
+                    progress.left + progress.width() * b / loopLen, progress.bottom, fill)
+                if (from + n <= loopLen) span(from, from + n) else { span(from, loopLen); span(0, from + n - loopLen) }
+            }
             // bar lines, so the loop reads as bars of the metronome's grid
             fill.color = Color.rgb(16, 16, 22)
             val bars = engine.loopBeats / 4
@@ -462,11 +562,15 @@ class BandView(context: Context, private val engine: Engine) : View(context) {
         val selected = engine.tracks[engine.selected]
         val firstTake = loopLen == 0 && selected.recording
         val counting = engine.countingIn == engine.selected
-        fill.color = if (selected.recording || counting) Color.rgb(170, 40, 40) else Color.rgb(60, 60, 72)
+        val waiting = engine.armed == engine.selected
+        fill.color = if (selected.recording || counting || waiting) Color.rgb(170, 40, 40) else Color.rgb(60, 60, 72)
         canvas.drawRoundRect(recButton, 16f, 16f, fill)
         label.textSize = 38f
         val recText = when {
             counting -> "Count-in… ${4 - beat}"
+            // beats left to the bar line the take starts on
+            waiting && engine.loopBeats > 0 ->
+                "● Rec in ${maxOf(1, ceil(((engine.armedAt - engine.pos + loopLen) % loopLen) / (loopLen.toFloat() / engine.loopBeats)).toInt())}"
             firstTake && bar > 0 -> "■ Stop · bar ${engine.recCount / bar + 1}"
             firstTake -> "■ Stop · %.1f s".format(engine.recCount / engine.blocksPerSecond)
             selected.recording -> "■ Stop"
@@ -494,6 +598,9 @@ class BandView(context: Context, private val engine: Engine) : View(context) {
         for (r in listOf(saveButton, openButton)) canvas.drawRoundRect(r, 16f, 16f, fill)
         canvas.drawText("Save", saveButton.centerX(), saveButton.centerY() + 13f, label)
         canvas.drawText(if (browser != null) "Close" else "Open…", openButton.centerX(), openButton.centerY() + 13f, label)
+        fill.color = if (engine.grid) Color.rgb(90, 80, 30) else Color.rgb(60, 60, 72)
+        canvas.drawRoundRect(gridButton, 16f, 16f, fill)
+        canvas.drawText(if (engine.grid) "Grid 1/16" else "Grid off", gridButton.centerX(), gridButton.centerY() + 13f, label)
     }
 
     /**
