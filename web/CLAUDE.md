@@ -68,6 +68,8 @@ gh workflow run web.yml --ref <branch>
 - **Old Safari (iOS 14.5–16).** AudioWorklet works there, but two newer APIs are missing:
   - `ctx.roundRect` (Safari 16+): it threw on every frame, so the screen stayed black while the sound played. Rounded rectangles go through `roundPath()` (arcTo).
   - `CompressionStream` (Safari 16.4+): sessions are stored as plain, ungzipped bytes there. `decode()` reads both, telling them apart by the gzip magic number.
+  - **An AudioWorklet breaks all sound there.** If the context holds one, every sound in it clicks ~48 times a second, even the browser's own oscillator. So on Safari before 16 (`OLD_WEBKIT`: no `roundRect`, iOS motion permission API) the same `Engine` runs on the page's thread through a `ScriptProcessorNode` of 1024 samples (`startScriptEngine`). That adds ~21 ms of latency, and the debug line then shows `sp`. Chrome on those iPhones is WebKit too and gets the same.
+  - `?engine=worklet` or `?engine=script` forces one engine on any browser.
   - Check new canvas or storage APIs against iOS 15 before using them.
 - **Playwright WebKit** screenshots at device scale 2 show the canvas at twice its size. That is the harness, not the page: the sizes are right, and Chromium and real iPhones look fine.
 - **`?debug=1`** adds a readout line `lat base+out+block=total ms [@rate] cpu N% max M`.
@@ -88,11 +90,5 @@ gh workflow run web.yml --ref <branch>
 - CPU per voice is ~2.5–3.5 % of a desktop core (`synth.js` in Node), about 1.5× the Kotlin cost.
 - **Android Chrome:** plays fine; latency `3+24+4` ms.
 - **New iPhone Safari:** plays fine; latency `2.7+10.1+4.0` ms. Tilt and shake work after the `touchend` permission, so the iOS sign flip (`IOS_SIGNS`) is right.
-- **Old iPhone, iOS 15.8.7 Safari:** runs after the `roundPath` fix; latency `2.7+?+4.0`. **Every sound crackles, and it is not our code:**
-  - `?test=sound` passes and the offline render has 0 jumps, so the samples are right.
-  - Even the browser's own `OscillatorNode` sine crackles, also with `?rate=native&hint=playback`, in headphones too. Chrome there (also WebKit) crackles less often.
-  - In Safari the clicks are regular, ~48 per second over the whole test: once per ~1024 samples, a hardware buffer.
-  - The context runs at `@48k` with or without `?rate=native`, and `?reopen=1` changes nothing, so it is not a wrong-rate context.
-  - Suspect: an AudioWorklet in the context at all (every test so far had one, even the plain sine). Next: `?engine=script`.
-  - Unless that helps, that phone's Web Audio output is broken, and the page cannot work around it. Only one such device has been seen, so there is no warning in the app. The native iOS app needs iOS 18, so it is no way out either.
+- **Old iPhone, iOS 15.8.7 Safari:** every sound clicked ~48 times a second, even the browser's own sine, in headphones too, at any rate or buffer size (`?rate=native`, `?hint=playback`, `?reopen=1`). Our samples were right (`?test=sound` passed, the offline render had 0 jumps). Without an AudioWorklet (`?engine=script`) it is clean, and that is now automatic there.
 - Not checked: the silent switch, the wake lock, CPU on a mid-range Android with several tracks.

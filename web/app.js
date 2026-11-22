@@ -333,6 +333,17 @@ function shapeOf(pts) {
 
 const G = 9.80665;
 const gravity = [0, 0, G];
+/**
+ * Safari before 16 (iOS 15 and older, every iOS browser there): an AudioWorklet in the context makes all
+ * of its sound click ~48 times a second, so the synth runs on a ScriptProcessorNode there
+ * (startScriptEngine). Told apart by `roundRect`, new in Safari 16. `?engine=worklet|script` forces one.
+ */
+const OLD_WEBKIT = typeof CanvasRenderingContext2D !== 'undefined' && !CanvasRenderingContext2D.prototype.roundRect &&
+  typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function';
+/** The ScriptProcessorNode's buffer: 1024 samples was click-free on iOS 15.8 (an iPhone 6s-class phone). */
+const SCRIPT_BUFFER = 1024;
+let scriptEngine = false;
+
 /** iOS Safari reports the opposite sign of the spec and of Android. */
 const IOS_SIGNS = typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function';
 
@@ -399,7 +410,7 @@ async function start() {
   dirty = true;
   // Session frames are per block, so a 48 kHz context keeps .rez files at Android's speed.
   blocksPerSecond = audio.sampleRate / BLOCK;
-  if (q.get('engine') === 'script') {
+  if (q.get('engine') === 'script' || (OLD_WEBKIT && q.get('engine') !== 'worklet')) {
     startScriptEngine();
   } else {
     try {
@@ -473,15 +484,15 @@ async function offlineTest() {
 }
 
 /**
- * ?engine=script: the same Engine on the page's own thread through a ScriptProcessorNode (1024 samples,
- * ~21 ms more latency), no AudioWorklet at all. Test for old iOS Safari, where every sound in a context
- * that holds an AudioWorklet clicks ~48 times a second, even the browser's own oscillator.
+ * The same Engine on the page's own thread through a ScriptProcessorNode (SCRIPT_BUFFER samples, ~21 ms
+ * more latency), no AudioWorklet at all: on old Safari (OLD_WEBKIT) or with ?engine=script.
  */
 async function startScriptEngine() {
   const { Engine } = await import('./worklet.js');
   const engine = new Engine(audio.sampleRate, (m) => onEngine({ data: m }));
   // one input: old Safari does not call onaudioprocess on a processor without inputs
-  const sp = audio.createScriptProcessor(1024, 1, 2);
+  const sp = audio.createScriptProcessor(SCRIPT_BUFFER, 1, 2);
+  scriptEngine = true;
   sp.onaudioprocess = (e) => engine.render(e.outputBuffer.getChannelData(0), e.outputBuffer.getChannelData(1));
   sp.connect(audio.destination);
   // the rest of the page talks to `node` as to the worklet
@@ -655,9 +666,11 @@ function drawReadout() {
 function latencyLine() {
   if (!audio) return 'audio: not started';
   const ms = (s) => (typeof s === 'number' ? (s * 1000).toFixed(1) : '?');
-  const total = (audio.baseLatency || 0) + (audio.outputLatency || 0) + BLOCK / audio.sampleRate;
+  // our own buffering: the 192-sample block, plus the processor's buffer when there is no worklet
+  const own = (BLOCK + (scriptEngine ? SCRIPT_BUFFER : 0)) / audio.sampleRate;
+  const total = (audio.baseLatency || 0) + (audio.outputLatency || 0) + own;
   const rate = ` @${audio.sampleRate / 1000}k`;
-  return `lat ${ms(audio.baseLatency)}+${ms(audio.outputLatency)}+${ms(BLOCK / audio.sampleRate)}=${ms(total)}${rate} cpu ${Math.round((st.cpu || 0) * 100)}% max ${st.peakMs || 0}`;
+  return `lat ${ms(audio.baseLatency)}+${ms(audio.outputLatency)}+${ms(own)}=${ms(total)}${rate}${scriptEngine ? ' sp' : ''} cpu ${Math.round((st.cpu || 0) * 100)}% max ${st.peakMs || 0}`;
 }
 
 /** Band length (from the peg, one finger) that gives `t`. */
