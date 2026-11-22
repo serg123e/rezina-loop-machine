@@ -2,11 +2,15 @@
 //
 // The page (app.js) never touches looper state: it posts messages (the live gesture, hits, commands) to
 // `port`, and this processor posts back what the screen shows (`state`, ~60 times a second) and a copy
-// of a track's frames whenever they become final (`frames`), for ghosts and saving.
+// of a track's frames whenever they change (`frames`: the played ones for ghosts, the raw ones for saving).
+//
+// A track records into `raw`, shifted back by the measured latency (`comp`); it plays `frames`, which is
+// `raw` with the grid applied (quantize.js) or a plain copy when the grid is off.
 //
 // The synth runs in 192-sample blocks, one Frame per block, like Android; the browser asks for 128
 // samples at a time, served from whole blocks (mixPos), as on iOS.
-import { Voice, Master, Mode, Frame, BLOCK } from './synth.js';
+import { Voice, Master, Mode, MODES, Frame, BLOCK } from './synth.js';
+import { quantizeHits, quantizeNotes, DIVISION } from './quantize.js';
 
 const MAX_SECONDS = 60;
 const MIN_LOOP_SECONDS = 0.5;
@@ -57,7 +61,7 @@ export class Engine {
     this.blocksPerSecond = sr / BLOCK;
     this.maxBlocks = Math.trunc(MAX_SECONDS * this.blocksPerSecond);
     this.tracks = DEFAULT_MODES.map((mode) => ({
-      mode, frames: new Float32Array(this.maxBlocks * Frame.SIZE),
+      mode, frames: new Float32Array(this.maxBlocks * Frame.SIZE), raw: new Float32Array(this.maxBlocks * Frame.SIZE),
       hasContent: false, muted: false, recording: false, level: 0,
     }));
     this.selected = 0;
@@ -73,6 +77,13 @@ export class Engine {
     this.loopLen = 0; this.pos = 0; this.recCount = 0;
     this.metronome = true; this.bpm = 100;
     this.loopBeats = 0; this.barBlocks = 0; this.clickBlocks = 0; this.countingIn = -1;
+    /** Pull hits and note starts toward the sixteenths (quantize.js). */
+    this.grid = true;
+    /**
+     * Blocks a take is shifted back by: what the player hears is late by the output latency, and their
+     * touch reaches us late by the input latency, so everything they play lands late by both.
+     */
+    this.comp = 0;
 
     this.liveVoice = new Voice(sr);
     this.voices = this.tracks.map(() => new Voice(sr));
@@ -104,7 +115,9 @@ export class Engine {
       case 'hit': this.hits.push([m.tune, m.vel, m.x, m.y]); break;
       case 'select': this.selected = m.i; break;
       case 'mute': this.tracks[m.i].muted = !this.tracks[m.i].muted; break;
-      case 'mode': this.tracks[m.i].mode = m.mode; break;
+      case 'mode': this.tracks[m.i].mode = m.mode; this.applyGrid(m.i); break;
+      case 'grid': this.grid = m.on; this.tracks.forEach((t, i) => this.applyGrid(i)); break;
+      case 'latency': this.comp = Math.max(0, Math.round(m.seconds * this.blocksPerSecond)); break;
       case 'metronome': this.metronome = m.on; break;
       // tempo changes only before the first loop and while not counting in (BandView.changeTempo)
       case 'bpm': if (this.loopLen === 0 && this.barBlocks === 0) this.bpm = m.bpm; break;
@@ -138,13 +151,13 @@ export class Engine {
       t.mode = d ? d.mode : t.mode;
       t.muted = d ? d.muted : false;
       t.hasContent = !!(d && d.frames);
-      if (t.hasContent) t.frames.set(d.frames.subarray(0, Math.min(d.frames.length, t.frames.length)));
+      if (t.hasContent) t.raw.set(d.frames.subarray(0, Math.min(d.frames.length, t.raw.length)));
     });
     this.loopLen = Math.min(s.loopLen, this.maxBlocks);
     this.loopBeats = s.loopBeats;
     this.bpm = s.bpm;
     this.pos = 0;
-    this.tracks.forEach((t, i) => this.sendFrames(i));
+    this.tracks.forEach((t, i) => this.applyGrid(i));
   }
 
   clear(i) {
@@ -157,7 +170,7 @@ export class Engine {
       this.loopBeats = 0;
       this.pos = 0;
     }
-    this.sendFrames(i);
+    this.applyGrid(i);
   }
 
   startRecording(t) {
@@ -170,12 +183,14 @@ export class Engine {
     if (this.loopLen === 0) {
       const bar = this.barBlocks;
       this.stopClicks();
+      // the last `comp` blocks were never written (the take is shifted back by them): silence
+      t.raw.fill(0, Math.max(0, this.recCount - this.comp) * Frame.SIZE, this.recCount * Frame.SIZE);
       // the first take sets the loop; a too-short one is a mis-tap, drop it
       if (this.recCount < this.blocksPerSecond * MIN_LOOP_SECONDS) return;
       if (bar > 0) {
         const bars = Math.min(Math.max(Math.round(this.recCount / bar), 1), Math.trunc(this.maxBlocks / bar));
         // rounded up → the tail was never played: silence, not leftovers of an old take
-        if (bars * bar > this.recCount) t.frames.fill(0, this.recCount * Frame.SIZE, bars * bar * Frame.SIZE);
+        if (bars * bar > this.recCount) t.raw.fill(0, this.recCount * Frame.SIZE, bars * bar * Frame.SIZE);
         this.loopLen = bars * bar;
         this.loopBeats = bars * 4;
       } else {
@@ -187,7 +202,7 @@ export class Engine {
       this.pos = 0;
     }
     t.hasContent = true;
-    this.sendFrames(this.tracks.indexOf(t));
+    this.applyGrid(this.tracks.indexOf(t));
   }
 
   stopClicks() {
@@ -195,11 +210,26 @@ export class Engine {
     this.barBlocks = 0;
   }
 
-  /** Copies track `i`'s loop to the page (null when it is empty). */
+  /** Rebuilds what track `i` plays from its raw take (grid or plain copy), then tells the page. */
+  applyGrid(i) {
+    const t = this.tracks[i];
+    const len = this.loopLen;
+    if (t.hasContent && len > 0) {
+      const step = len / (this.loopBeats * DIVISION);
+      if (!this.grid || !(step >= 1)) t.frames.set(t.raw.subarray(0, len * Frame.SIZE));
+      else if (MODES[t.mode].drums) quantizeHits(t.raw, t.frames, len, step);
+      else quantizeNotes(t.raw, t.frames, len, step);
+    }
+    this.sendFrames(i);
+  }
+
+  /** Copies track `i`'s loop to the page (null when it is empty): `frames` as played, `raw` for saving. */
   sendFrames(i) {
     const t = this.tracks[i];
-    const frames = t.hasContent && this.loopLen > 0 ? t.frames.slice(0, this.loopLen * Frame.SIZE) : null;
-    this.post({ t: 'frames', i, frames }, frames ? [frames.buffer] : []);
+    const has = t.hasContent && this.loopLen > 0;
+    const frames = has ? t.frames.slice(0, this.loopLen * Frame.SIZE) : null;
+    const raw = has ? t.raw.slice(0, this.loopLen * Frame.SIZE) : null;
+    this.post({ t: 'frames', i, frames, raw }, has ? [frames.buffer, raw.buffer] : []);
   }
 
   levelOf(f, o) {
@@ -235,11 +265,13 @@ export class Engine {
     const tempo = this.bpm;
     let kicked = this.liveVoice.render(toneL, toneR, drumL, drumR, BLOCK, live, 0, tracks[this.selected].mode, tempo);
 
-    const writeAt = (this.loopLen === 0 ? this.recCount : this.pos) * Frame.SIZE;
+    // the take is shifted back by `comp` blocks; on the first take the earliest ones fall before its start
+    const writeBlock = this.loopLen === 0 ? this.recCount - this.comp
+      : (this.pos - (this.comp % this.loopLen) + this.loopLen) % this.loopLen;
     for (let i = 0; i < tracks.length; i++) {
       const t = tracks[i];
       if (t.recording) {
-        t.frames.set(live, writeAt);
+        if (writeBlock >= 0) t.raw.set(live, writeBlock * Frame.SIZE);
         t.level = this.levelOf(live, 0);
       } else if (t.hasContent && this.loopLen > 0) {
         const o = this.pos * Frame.SIZE;

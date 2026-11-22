@@ -49,6 +49,8 @@ let st = {
 };
 /** Each track's loop as the audio thread last sent it (null when empty): ghosts and saving. */
 const trackFrames = [null, null, null, null];
+/** The same loops as recorded, before the grid: what Save writes, so the grid stays switchable after a reload. */
+const trackRaw = [null, null, null, null];
 let blocksPerSecond = 48000 / BLOCK;
 let stateSig = '';
 
@@ -58,6 +60,7 @@ function onEngine(e) {
   const m = e.data;
   if (m.t === 'frames') {
     trackFrames[m.i] = m.frames;
+    trackRaw[m.i] = m.raw;
     dirty = true;
   } else if (m.t === 'state') {
     st = m;
@@ -85,7 +88,7 @@ let scale = 1;
 const px = (v) => v * scale;
 const rect = () => ({ x: 0, y: 0, w: 0, h: 0 });
 const cells = [rect(), rect(), rect(), rect()];
-const recButton = rect(), modeButton = rect(), saveButton = rect(), openButton = rect();
+const recButton = rect(), modeButton = rect(), saveButton = rect(), openButton = rect(), gridButton = rect();
 const slowerButton = rect(), tempoButton = rect(), fasterButton = rect(), progress = rect();
 let panelBottom = 0;
 const listTop = () => panelBottom + px(110);
@@ -128,8 +131,11 @@ function layout() {
     x = r.x + r.w + pad;
   });
   const sy = recButton.y + recButton.h + pad;
-  setRect(saveButton, pad, sy, W / 2 - pad / 2, sy + H * 0.045);
-  setRect(openButton, W / 2 + pad / 2, sy, W - pad, sy + H * 0.045);
+  // Save | Open… | Grid
+  const third = (W - 4 * pad) / 3;
+  setRect(saveButton, pad, sy, pad + third, sy + H * 0.045);
+  setRect(openButton, 2 * pad + third, sy, 2 * pad + 2 * third, sy + H * 0.045);
+  setRect(gridButton, 3 * pad + 2 * third, sy, W - pad, sy + H * 0.045);
   panelBottom = saveButton.y + saveButton.h + px(16);
   dirty = true;
 }
@@ -214,6 +220,44 @@ function panelTap(x, y, hold) {
   else if (contains(modeButton, x, y)) send({ t: 'mode', i: st.selected, mode: nextMode(st.tracks[st.selected].mode) });
   else if (contains(saveButton, x, y)) save();
   else if (contains(openButton, x, y)) openBrowser();
+  else if (contains(gridButton, x, y)) setGrid(!grid);
+}
+
+// ---- grid and latency: how takes are tidied (worklet.js applies both) ----
+
+/**
+ * Grid: drum hits and note starts pulled 70 % toward the loop's sixteenths (quantize.js). Only what is
+ * played changes; takes are kept and saved as recorded. Remembered on this device.
+ */
+let grid = readGrid();
+function readGrid() {
+  try { return localStorage.getItem('rezina.grid') !== 'off'; } catch { return true; }
+}
+function setGrid(on) {
+  grid = on;
+  try { localStorage.setItem('rezina.grid', on ? 'on' : 'off'); } catch { /* private mode: not remembered */ }
+  send({ t: 'grid', on });
+  toast(on ? 'Grid on: hits and note starts pulled to 1/16' : 'Grid off: played as recorded');
+}
+
+/** Touch to the page's event, a frame or so on phones (an estimate: browsers do not report it). */
+const TOUCH_S = 0.015;
+/** Output latency where the browser does not report it (iOS 15 Safari): what a newer iPhone reports. */
+const OUTPUT_GUESS_S = 0.01;
+let sentLatency = -1;
+
+/**
+ * Everything the player is late by: they hear the loop `out` late and play along with that, and their
+ * touch reaches us `TOUCH_S` later. Takes are shifted back by it. Re-sent when the browser's figure moves.
+ */
+function sendLatency() {
+  if (!audio || !node) return;
+  const out = (audio.baseLatency || 0) + (typeof audio.outputLatency === 'number' ? audio.outputLatency : OUTPUT_GUESS_S);
+  const own = (BLOCK + (scriptEngine ? SCRIPT_BUFFER : 0)) / audio.sampleRate;
+  const seconds = out + own + TOUCH_S;
+  if (Math.abs(seconds - sentLatency) < 0.002) return;
+  sentLatency = seconds;
+  send({ t: 'latency', seconds });
 }
 
 function changeTempo(delta) {
@@ -225,7 +269,7 @@ async function save() {
   if (st.countingIn >= 0 || st.tracks.some((t) => t.recording)) return toast('Finish recording first');
   const session = {
     sampleRate: audio.sampleRate, loopLen: st.loopLen, loopBeats: st.loopBeats, bpm: st.bpm,
-    tracks: st.tracks.map((t, i) => ({ mode: t.mode, muted: t.muted, frames: t.hasContent ? trackFrames[i] : null })),
+    tracks: st.tracks.map((t, i) => ({ mode: t.mode, muted: t.muted, frames: t.hasContent ? trackRaw[i] : null })),
   };
   try {
     navigator.storage?.persist?.(); // ask the browser not to clear saved loops when space runs low
@@ -476,6 +520,9 @@ async function start() {
     node.port.onmessage = onEngine;
     node.connect(audio.destination);
   }
+  send({ t: 'grid', on: grid });
+  sendLatency();
+  setInterval(sendLatency, 2000); // outputLatency settles after start and changes with headphones
   keepAwake();
   openLinkedSession();
   if (new URLSearchParams(location.search).get('test') === 'offline') offlineTest();
@@ -923,6 +970,8 @@ function drawPanel() {
   roundRect(openButton, rgb(60, 60, 72));
   buttonText('Save', saveButton);
   buttonText(browser ? 'Close' : 'Open…', openButton);
+  roundRect(gridButton, grid ? rgb(90, 80, 30) : rgb(60, 60, 72));
+  buttonText(grid ? 'Grid 1/16' : 'Grid off', gridButton);
 }
 
 /** Replays each audible track's recorded shapes at the playhead: the band as held, a burst at each drum hit. */

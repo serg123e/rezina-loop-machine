@@ -52,7 +52,21 @@ gh workflow run web.yml --ref <branch>
   - On a desktop the app is a portrait column in the middle.
 - **`sessions.js`** (Sessions.kt): the `.rez` bytes, format v2 with the context's sample rate (gzip via `CompressionStream`, big-endian `DataView`), stored in IndexedDB `rezina/sessions` under Android's file names.
 - **Import.** The Open… list starts with "＋ Import .rez file…". The file picker opens from the `click` after that tap: a user gesture on iOS too. The file input has no `accept`, because iOS greys out an extension it does not know. An imported file is saved under its own name (`label`), then opened.
+- **`quantize.js`**: the grid (below).
 - **`?session=demo`** opens `sessions/demo.rez` on the first tap: the sound lab's "Всё вместе" phrase (Growl, 808, Pluck; 4 bars at 100 bpm). It is not added to the list. `node tools/make-demo-session.mjs` rebuilds it from `docs/sound-lab.html`; rebuild after changing the page's phrase. Other files in `sessions/` open the same way by name (`[a-z0-9-]`).
+
+## Takes: latency shift and grid (web only so far, see PORTING.md)
+
+- **Latency shift.** The player hears the loop late and plays along with that, and their touch arrives later still, so every take lands late by both. Takes are recorded shifted back by that much (`Engine.comp`, in blocks).
+  - The page sends `{t:'latency', seconds}` = `baseLatency` + `outputLatency` (10 ms where the browser does not say) + our block + the ScriptProcessor buffer if any + 15 ms of touch. It re-sends every 2 s if the figure moves.
+  - On the first take, the last `comp` blocks are silent; a later take wraps around the loop as usual.
+- **Grid** (the "Grid 1/16" / "Grid off" button, on by default, kept in `localStorage`).
+  - Each track has `raw` (as recorded, shifted) and `frames` (what plays and what the ghosts show). `applyGrid` rebuilds `frames` after a take, a load, a sound change and a grid switch.
+  - `quantize.js`, sixteenths of the loop's own grid (`loopLen / (loopBeats × 4)` blocks), 70 % of the way (`STRENGTH`):
+    - drums: each hit moves to its block (`quantizeHits`);
+    - bass and lead: each note (a gate-on run) moves whole, start pulled, slides and vibrato kept, at least one gate-off frame between notes so the filter retriggers (`quantizeNotes`).
+  - Save writes `raw`, so the grid stays switchable after a reload, and the file format did not change. Android and iOS open such files as played, without the grid.
+  - Tests: `test/quantize.mjs`.
 
 ## Browser specifics
 
