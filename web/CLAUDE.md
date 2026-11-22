@@ -88,5 +88,8 @@ gh workflow run web.yml --ref <branch>
 - CPU per voice is ~2.5–3.5 % of a desktop core (`synth.js` in Node), about 1.5× the Kotlin cost.
 - **Android Chrome:** plays fine; latency `3+24+4` ms.
 - **New iPhone Safari:** plays fine; latency `2.7+10.1+4.0` ms. Tilt and shake work after the `touchend` permission, so the iOS sign flip (`IOS_SIGNS`) is right.
-- **Old iPhone, iOS 15 Safari:** works after the `roundPath` fix; latency `2.7+?+4.0`. **Every sound crackles there, in headphones too**, at `cpu` 3–7 %: not the speaker, not average CPU. `?rate=native` (max 1–3 ms) and `?hint=playback` crackle too, so it is not resampling or the buffer hint. The offline render played back crackles too, yet it has 0 jumps and `?test=sound` passes there: the samples are right, so the crackle is added on the way out. Chrome on that iPhone (also WebKit) crackles less often. Next: the staged `?test=offline` (does a plain browser sine crackle?).
+- **Old iPhone, iOS 15 Safari:** runs after the `roundPath` fix; latency `2.7+?+4.0`. **Every sound crackles, and it is not our code:**
+  - `?test=sound` passes and the offline render has 0 jumps, so the samples are right.
+  - Even the browser's own `OscillatorNode` sine crackles, also with `?rate=native&hint=playback`, in headphones too. Chrome there (also WebKit) crackles less often.
+  - So that phone's Web Audio output is broken, and the page cannot work around it. Only one such device has been seen, so there is no warning in the app. The native iOS app needs iOS 18, so it is no way out either.
 - Not checked: the silent switch, the wake lock, CPU on a mid-range Android with several tracks.
