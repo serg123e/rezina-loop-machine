@@ -51,7 +51,10 @@ gh workflow run web.yml --ref <branch>
 
 ## Browser specifics
 
-- **The first tap starts everything.** Browsers allow sound only after a gesture, and iOS asks for motion permission (`DeviceMotionEvent.requestPermission`) only from a tap. That tap does not play.
+- **The first tap starts everything.** Browsers allow sound only after a gesture, so that tap does not play.
+- **iOS motion permission** (`DeviceMotionEvent.requestPermission`) is asked when the first tap's finger lifts (`touchend`).
+  - From `pointerdown` Safari refuses it with no prompt. Until 2026-11-22 it was asked there, and tilt and shake never worked on iPhones.
+  - A refusal for that reason asks again on the next lift. A "Don't allow" sticks until Safari is restarted.
 - **`AudioContext({sampleRate: 48000})`**, so frames are 4 ms as on Android and `.rez` files play at the same speed. If the hardware runs at another rate, the browser resamples.
 - **Motion.** `accelerationIncludingGravity` goes through MainActivity's filter, with the constants rescaled from Android's 50 Hz to the event interval.
   - iOS Safari reports the opposite sign of Android and the spec, so the values are negated there (detected by `requestPermission`).

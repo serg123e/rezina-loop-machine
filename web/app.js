@@ -369,8 +369,8 @@ async function keepAwake() {
 
 /** First tap: audio and sensors may only start from a user gesture. */
 async function start() {
-  // iOS asks for the motion sensors only straight from a tap
-  const perm = IOS_SIGNS ? DeviceMotionEvent.requestPermission().catch(() => 'denied') : Promise.resolve('granted');
+  // iOS: the sensors wait for a permission asked when the finger lifts (askMotion)
+  if (!IOS_SIGNS) window.addEventListener('devicemotion', onMotion);
   if (navigator.audioSession) navigator.audioSession.type = 'playback'; // iOS: sound even with the silent switch on
   try {
     audio = new AudioContext({ sampleRate: 48000, latencyHint: 'interactive' });
@@ -390,10 +390,27 @@ async function start() {
   node = new AudioWorkletNode(audio, 'rezina', { numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [2] });
   node.port.onmessage = onEngine;
   node.connect(audio.destination);
-  if ((await perm) === 'granted') window.addEventListener('devicemotion', onMotion);
-  else toast('No motion sensors: tilt and shake are off');
   keepAwake();
 }
+
+/**
+ * iOS 13+ sends motion events only after DeviceMotionEvent.requestPermission(), and takes that call only
+ * from a finger lifting (touchend) or a click: from pointerdown it is refused without a prompt. Asked on
+ * the lift of the first tap; if refused for that reason, asked again on the next lift.
+ */
+let motion = 'off'; // off → asking → on | denied
+canvas.addEventListener('touchend', () => {
+  if (!IOS_SIGNS || !audio || motion !== 'off') return;
+  motion = 'asking';
+  DeviceMotionEvent.requestPermission().then((r) => {
+    motion = r === 'granted' ? 'on' : 'denied';
+    if (motion === 'on') window.addEventListener('devicemotion', onMotion);
+    else toast('Motion access denied: tilt and shake are off');
+  }, (e) => {
+    motion = 'off';
+    toast(`Motion sensors: ${e && e.message ? e.message : e}`);
+  });
+});
 
 document.addEventListener('visibilitychange', () => {
   if (!audio) return;
