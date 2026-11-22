@@ -1,6 +1,6 @@
 # Rezina for iPhone
 
-Native Swift port of the Android app in `../app` (read `../CLAUDE.md` for what the instrument and the looper do). Same behaviour, labels and session file format; each Swift file says which Kotlin file it ports. Change a rule there, port it here.
+Native Swift port of the Android app in `../app` (read `../CLAUDE.md` for what the instrument and the looper do). Same behaviour, labels and session file format; each Swift file says which Kotlin file it ports. Change a rule there, port it here. What this version still lacks: [`../PORTING.md`](../PORTING.md).
 
 No third-party libraries: SwiftUI shell, one UIKit view drawn with CoreGraphics, `AVAudioEngine`, `CoreMotion`. iPhone only, portrait only, iOS 18+ (the `Synchronization` module's `Atomic`).
 
@@ -55,7 +55,7 @@ make release         # build + upload → "What to Test" → internal groups →
 
 - The synth always runs at **48 kHz in 192-sample blocks** (4 ms), one `Frame` per block, like Android. The source node's format is fixed at 48 kHz; if the hardware runs at another rate, `AVAudioEngine` converts.
 - iOS asks for any buffer size in the callback; `Engine.render` serves it from whole blocks (`mixPos`). This adds up to one block (4 ms) of latency on top of the ~5 ms IO buffer (`setPreferredIOBufferDuration(0.005)`).
-- So `.rez` files are the Android format byte for byte, and play at the right speed between an iPhone and a 48 kHz Android phone. A file from a 44.1 kHz Android phone plays about 9 % faster here.
+- So `.rez` files are the Android format byte for byte (v2 records the rate: 48000 here), and play at the right speed between an iPhone and a 48 kHz Android phone. A file from a 44.1 kHz Android phone plays about 9 % faster here; converting on load is in [`../PORTING.md`](../PORTING.md).
 - Latency numbers go to the log: subsystem `it.automate123.rezina`, category `audio`.
 
 ## Differences from Android

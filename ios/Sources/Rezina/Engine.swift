@@ -199,7 +199,7 @@ final class Engine {
     func snapshot() -> Session? {
         let len = loopLen.value
         if len == 0 || countingIn.value >= 0 || tracks.contains(where: { $0.recording.value }) { return nil }
-        return Session(loopLen: len, loopBeats: loopBeats.value, bpm: bpm.value, tracks: tracks.map { t in
+        return Session(sampleRate: Int(Engine.sampleRate), loopLen: len, loopBeats: loopBeats.value, bpm: bpm.value, tracks: tracks.map { t in
             Session.TrackData(mode: t.mode, muted: t.muted.value,
                               frames: t.hasContent.value ? Array(UnsafeBufferPointer(start: t.frames, count: len * Frame.size)) : nil)
         })

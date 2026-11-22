@@ -111,7 +111,7 @@ class Engine(
     fun snapshot(): Session? {
         val len = loopLen
         if (len == 0 || countingIn >= 0 || tracks.any { it.recording }) return null
-        return Session(len, loopBeats, bpm, tracks.map { t ->
+        return Session(sampleRate, len, loopBeats, bpm, tracks.map { t ->
             Session.TrackData(t.mode, t.muted, if (t.hasContent) t.frames.copyOf(len * Frame.SIZE) else null)
         })
     }

@@ -9,6 +9,8 @@ struct Session {
         let frames: [Float]?
     }
 
+    /// The rate the frames were recorded at (one frame per 192-sample block); 0 = unknown (a v1 file).
+    let sampleRate: Int
     let loopLen: Int
     let loopBeats: Int
     let bpm: Int
@@ -20,13 +22,14 @@ struct SessionError: Error {}
 /// Sessions live as gzip'd files in `Documents/sessions/<date>.rez`, newest first.
 /// Same format as Android `Sessions.kt`, so files can be moved between the apps.
 ///
-/// Format v1: magic, version, Frame.size, loopLen, loopBeats, bpm, track count (big-endian Int32); then per
-/// track mode ordinal (byte), muted, hasContent (bytes 0/1) and, if present, loopLen × Frame.size big-endian
-/// floats. Frames are per 192-sample block; iOS always runs at 48 kHz, so a file from a 44.1 kHz Android
-/// phone plays ~9 % faster here.
+/// Format v2: magic, version, Frame.size, sample rate, loopLen, loopBeats, bpm, track count (big-endian Int32);
+/// then per track mode ordinal (byte), muted, hasContent (bytes 0/1) and, if present, loopLen × Frame.size
+/// big-endian floats. v1 is the same without the sample rate; it is still read (rate 0 = unknown).
+/// Frames are per 192-sample block; iOS always runs at 48 kHz, and loading does not convert yet
+/// (see PORTING.md), so a file from a 44.1 kHz Android phone plays ~9 % faster here.
 enum Sessions {
     private static let magic: Int32 = 0x5245_5a31 // "REZ1"
-    private static let version: Int32 = 1
+    private static let version: Int32 = 2
 
     /// A saved file and a one-line summary read from its header.
     struct Entry {
@@ -70,6 +73,7 @@ enum Sessions {
         int(magic)
         int(version)
         int(Int32(Frame.size))
+        int(Int32(s.sampleRate))
         int(Int32(s.loopLen))
         int(Int32(s.loopBeats))
         int(Int32(s.bpm))
@@ -108,7 +112,10 @@ enum Sessions {
             at += 4
             return Int(Int32(bitPattern: v))
         }
-        guard try int() == Int(magic), try int() == Int(version), try int() == Frame.size else { throw SessionError() }
+        guard try int() == Int(magic) else { throw SessionError() }
+        let fileVersion = try int()
+        guard (1...Int(version)).contains(fileVersion), try int() == Frame.size else { throw SessionError() }
+        let sampleRate = fileVersion >= 2 ? try int() : 0
         let loopLen = try int()
         let loopBeats = try int()
         let bpm = try int()
@@ -132,6 +139,6 @@ enum Sessions {
             }
             tracks.append(.init(mode: mode, muted: muted, frames: frames))
         }
-        return Session(loopLen: loopLen, loopBeats: loopBeats, bpm: bpm, tracks: tracks)
+        return Session(sampleRate: sampleRate, loopLen: loopLen, loopBeats: loopBeats, bpm: bpm, tracks: tracks)
     }
 }

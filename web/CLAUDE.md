@@ -1,6 +1,6 @@
 # Rezina in the browser
 
-JavaScript port of the Android app in `../app` (read `../CLAUDE.md` for what the instrument and the looper do). It has the same behaviour, labels and session format. Each file says which Kotlin file it ports. When you change a rule there, port it here too.
+JavaScript port of the Android app in `../app` (read `../CLAUDE.md` for what the instrument and the looper do). It has the same behaviour, labels and session format. Each file says which Kotlin file it ports. When you change a rule there, port it here too. What this version still lacks, and what it has that the others don't: [`../PORTING.md`](../PORTING.md).
 
 No libraries and no build step: plain ES modules, one `<canvas>`, an `AudioWorklet`, `devicemotion`, IndexedDB. Installable to the home screen (manifest + service worker), works offline after the first visit.
 
@@ -50,7 +50,7 @@ gh workflow run web.yml --ref <branch>
 - **`app.js`** (BandView.kt, MainActivity.kt): touches (Pointer Events), the band, the panel, grid, ghosts, toasts, the browser list, sensors, start and pause.
   - Pixel constants are Android's on a 1080 px wide screen, scaled by `px()`.
   - On a desktop the app is a portrait column in the middle.
-- **`sessions.js`** (Sessions.kt): the `.rez` bytes (gzip via `CompressionStream`, big-endian `DataView`), stored in IndexedDB `rezina/sessions` under Android's file names.
+- **`sessions.js`** (Sessions.kt): the `.rez` bytes, format v2 with the context's sample rate (gzip via `CompressionStream`, big-endian `DataView`), stored in IndexedDB `rezina/sessions` under Android's file names.
 
 ## Browser specifics
 

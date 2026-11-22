@@ -4,7 +4,7 @@ This is an Android app. You stretch and bend a band on the screen with your fing
 
 There are no libraries. The synth runs on `AudioTrack` (stereo float), and the whole screen is one custom `View`. The README is the user-facing page and has the screenshots.
 
-**Ports.** There are two copies of this app, with the same behaviour and session format. When you change a rule in the Kotlin code, port it to both.
+**Ports.** There are two copies of this app, with the same behaviour and session format. When you change a rule in the Kotlin code, port it to both. **[`PORTING.md`](PORTING.md) lists what each version still lacks:** when you change one version and not the others, add a line there for each of them.
 
 - **iPhone:** `ios/` is a native Swift copy. Build and release: [`ios/CLAUDE.md`](ios/CLAUDE.md).
 - **Browser:** `web/` is a JavaScript copy (AudioWorklet, canvas, installable), deployed to GitHub Pages. Details: [`web/CLAUDE.md`](web/CLAUDE.md).
@@ -130,10 +130,10 @@ Each track plays one of nine sounds (`Mode`), three per family (`Kind`: bass, dr
 
 **Saving**
 
-- **Save** writes the current loop to `files/sessions/<date>.rez`. The file is gzip; the format is described in `Sessions.kt`. It holds the track gestures, each track's mode and mute state, the loop length, the bars and the tempo.
+- **Save** writes the current loop to `files/sessions/<date>.rez`. The file is gzip; the format is described in `Sessions.kt`. It holds the sample rate (format v2; v1 files without it still open), the track gestures, each track's mode and mute state, the loop length, the bars and the tempo.
 - Saving is refused during recording or count-in.
 - **Open…** shows a list over the band. Tap an entry to load it (this replaces everything); hold an entry to delete it.
-- Frames are tied to the phone's sample rate, so a file from another phone plays slightly faster or slower.
+- Frames are tied to the phone's sample rate, so a file from another phone plays slightly faster or slower. The file records its rate, but loading does not convert yet ([`PORTING.md`](PORTING.md)).
 
 **Playing live**
 

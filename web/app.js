@@ -224,7 +224,7 @@ async function save() {
   if (st.loopLen === 0) return toast('Nothing to save');
   if (st.countingIn >= 0 || st.tracks.some((t) => t.recording)) return toast('Finish recording first');
   const session = {
-    loopLen: st.loopLen, loopBeats: st.loopBeats, bpm: st.bpm,
+    sampleRate: audio.sampleRate, loopLen: st.loopLen, loopBeats: st.loopBeats, bpm: st.bpm,
     tracks: st.tracks.map((t, i) => ({ mode: t.mode, muted: t.muted, frames: t.hasContent ? trackFrames[i] : null })),
   };
   try {

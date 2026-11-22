@@ -1,24 +1,26 @@
 // Saving and loading sessions: port of Android Sessions.kt. The bytes are the Android .rez format
 // (gzip, big-endian), kept in the browser's IndexedDB instead of files.
 //
-// Format v1: magic, version, Frame.SIZE, loopLen, loopBeats, bpm, track count (int32 each); then per track
-// mode ordinal (byte), muted, hasContent (bool bytes) and, if present, loopLen × Frame.SIZE float32.
+// Format v2: magic, version, Frame.SIZE, sample rate, loopLen, loopBeats, bpm, track count (int32 each);
+// then per track mode ordinal (byte), muted, hasContent (bool bytes) and, if present, loopLen × Frame.SIZE
+// float32. v1 is the same without the sample rate; it is still read (sampleRate 0 = unknown).
+// Loading does not convert between rates yet (see PORTING.md).
 import { Frame, MODES } from './synth.js';
 
 const MAGIC = 0x52455a31; // "REZ1"
-const VERSION = 1;
+const VERSION = 2;
 
 async function pipe(bytes, stream) {
   return new Uint8Array(await new Response(new Blob([bytes]).stream().pipeThrough(stream)).arrayBuffer());
 }
 
-/** session → gzip'd .rez bytes */
+/** session ({ sampleRate, loopLen, loopBeats, bpm, tracks }) → gzip'd .rez bytes */
 export async function encode(s) {
-  let size = 7 * 4;
+  let size = 8 * 4;
   for (const t of s.tracks) size += 3 + (t.frames ? s.loopLen * Frame.SIZE * 4 : 0);
   const d = new DataView(new ArrayBuffer(size));
   let o = 0;
-  for (const v of [MAGIC, VERSION, Frame.SIZE, s.loopLen, s.loopBeats, s.bpm, s.tracks.length]) { d.setInt32(o, v); o += 4; }
+  for (const v of [MAGIC, VERSION, Frame.SIZE, s.sampleRate, s.loopLen, s.loopBeats, s.bpm, s.tracks.length]) { d.setInt32(o, v); o += 4; }
   for (const t of s.tracks) {
     d.setInt8(o++, t.mode);
     d.setInt8(o++, t.muted ? 1 : 0);
@@ -37,7 +39,10 @@ export async function decode(bytes) {
   const d = new DataView(raw.buffer, raw.byteOffset, raw.byteLength);
   let o = 0;
   const int = () => { const v = d.getInt32(o); o += 4; return v; };
-  if (int() !== MAGIC || int() !== VERSION || int() !== Frame.SIZE) throw new Error('not a rezina v1 session');
+  if (int() !== MAGIC) throw new Error('not a rezina session');
+  const version = int();
+  if (version < 1 || version > VERSION || int() !== Frame.SIZE) throw new Error(`unsupported rezina session v${version}`);
+  const sampleRate = version >= 2 ? int() : 0;
   const loopLen = int(), loopBeats = int(), bpm = int(), count = int();
   const tracks = [];
   for (let k = 0; k < count; k++) {
@@ -52,7 +57,7 @@ export async function decode(bytes) {
     }
     tracks.push({ mode, muted, frames });
   }
-  return { loopLen, loopBeats, bpm, tracks };
+  return { sampleRate, loopLen, loopBeats, bpm, tracks };
 }
 
 // ---- storage: one IndexedDB store, key = file name as on Android (yyyy-MM-dd_HH-mm-ss) ----
