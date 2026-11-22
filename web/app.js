@@ -247,12 +247,17 @@ async function openBrowser() {
   dirty = true;
 }
 
+/** Row 0 of the list is "Import .rez file…"; the saved loops follow. */
 function browserTap(x, y, hold) {
   const entries = browser;
-  const i = Math.floor((y - listTop()) / px(ITEM_H));
+  const i = Math.floor((y - listTop()) / px(ITEM_H)) - 1;
   dirty = true;
   if (y < listTop() || i >= entries.length) {
     browser = null; // tap outside the list closes it
+    return;
+  }
+  if (i < 0) {
+    importAsked = true; // the file picker opens from the click that follows (a user gesture on iOS too)
     return;
   }
   const entry = entries[i];
@@ -264,6 +269,54 @@ function browserTap(x, y, hold) {
   browser = null;
   send({ t: 'load', session: entry.session });
   toast(`Opened: ${entry.title}`);
+}
+
+// ---- import a .rez file (from another device, or one made elsewhere) ----
+
+const fileInput = document.createElement('input');
+fileInput.type = 'file'; // no `accept`: iOS greys out a .rez, an extension it does not know
+let importAsked = false;
+canvas.addEventListener('click', () => {
+  if (!importAsked) return;
+  importAsked = false;
+  fileInput.value = '';
+  fileInput.click();
+});
+fileInput.addEventListener('change', async () => {
+  const file = fileInput.files && fileInput.files[0];
+  if (!file) return;
+  let session;
+  try {
+    session = await Sessions.decode(await file.arrayBuffer());
+  } catch {
+    return toast('Not a Rezina loop');
+  }
+  const label = file.name.replace(/\.rez$/i, '');
+  try {
+    await Sessions.save(session, label);
+  } catch {
+    toast('Could not save');
+  }
+  browser = null;
+  send({ t: 'load', session });
+  toast(`Opened: ${label}`);
+});
+
+/**
+ * ?session=demo: opens web/sessions/demo.rez on the first tap (the sound lab's "Всё вместе" phrase,
+ * made by tools/make-demo-session.mjs), so a link can show the looper playing. Not saved to the list.
+ */
+async function openLinkedSession() {
+  const name = new URLSearchParams(location.search).get('session');
+  if (!name || !/^[a-z0-9-]+$/.test(name)) return;
+  try {
+    const r = await fetch(`sessions/${name}.rez`);
+    if (!r.ok) throw new Error(r.status);
+    send({ t: 'load', session: await Sessions.decode(await r.arrayBuffer()) });
+    toast(`Opened: ${name}`);
+  } catch {
+    toast(`Could not open ${name}`);
+  }
 }
 
 let toastText = null;
@@ -411,7 +464,7 @@ async function start() {
   // Session frames are per block, so a 48 kHz context keeps .rez files at Android's speed.
   blocksPerSecond = audio.sampleRate / BLOCK;
   if (q.get('engine') === 'script' || (OLD_WEBKIT && q.get('engine') !== 'worklet')) {
-    startScriptEngine();
+    await startScriptEngine();
   } else {
     try {
       await audio.audioWorklet.addModule('worklet.js');
@@ -424,6 +477,7 @@ async function start() {
     node.connect(audio.destination);
   }
   keepAwake();
+  openLinkedSession();
   if (new URLSearchParams(location.search).get('test') === 'offline') offlineTest();
 }
 
@@ -734,9 +788,16 @@ function drawBrowser(entries) {
   ctx.fillRect(0, panelBottom, W, H - panelBottom);
   font(36, MONO);
   text('Saved loops: tap — open, hold — delete', px(24), panelBottom + px(60), 'white');
-  if (entries.length === 0) text('Nothing saved yet', px(24), listTop() + px(60), 'lightgray');
-  entries.forEach((entry, i) => {
-    const top = listTop() + i * px(ITEM_H);
+  const first = { x: px(16), y: listTop(), w: W - px(32), h: px(ITEM_H) - px(16) };
+  ctx.strokeStyle = rgb(255, 255, 255, 110);
+  ctx.lineWidth = px(3);
+  roundPath(first.x, first.y, first.w, first.h, px(16));
+  ctx.stroke();
+  font(40);
+  text('＋ Import .rez file…', px(40), first.y + px(75), 'white');
+  if (entries.length === 0) text('Nothing saved yet', px(40), listTop() + px(ITEM_H) + px(60), 'lightgray');
+  entries.forEach((entry, k) => {
+    const top = listTop() + (k + 1) * px(ITEM_H);
     if (top + px(ITEM_H) > H) return;
     roundRect({ x: px(16), y: top, w: W - px(32), h: px(ITEM_H) - px(16) }, rgb(42, 42, 52));
     font(40);

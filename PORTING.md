@@ -7,12 +7,14 @@ There are three copies of Rezina with the same behaviour: Android (`app/`), iPho
 ## Android (`app/`)
 
 - [ ] **See-through readout.** The note rings should show through a half-transparent plate under the text readout (web: `drawReadout`, `plate()` in `app.js`). Ring names that fall under the plate are not drawn.
+- [ ] **Import a `.rez` file.** Web has "＋ Import .rez file…" as the first row of the Open… list: the file is saved under its own name and opened (`fileInput` in `app.js`). Android: an `ACTION_OPEN_DOCUMENT` intent.
 - [ ] **Latency and CPU on screen.** Web shows `lat base+out+block=total cpu N% max M` with `?debug=1`. Android logs only its own buffer size (`adb logcat -s rezina:I`). The output part needs `AudioTrack.getTimestamp`.
 - [ ] **Convert a file's frames to this phone's rate on load.** Sessions record their sample rate (format v2), but nothing converts yet. A 44.1 kHz file still plays ~9 % faster at 48 kHz.
 
 ## iPhone (`ios/`)
 
 - [ ] **See-through readout.** As above.
+- [ ] **Import a `.rez` file.** As above; on iOS a document picker, or opening a `.rez` from Files (`CFBundleDocumentTypes`).
 - [ ] **Latency and CPU on screen.** As above; iOS logs latency to the `audio` category only.
 - [ ] **Convert a file's frames to this phone's rate on load.** As above (iOS always runs at 48 kHz).
 
@@ -22,7 +24,7 @@ There are three copies of Rezina with the same behaviour: Android (`app/`), iPho
 
 ## Nowhere yet
 
-- [ ] **Move sessions between devices** (export and import a `.rez` file). The format is the same in all three versions, but each keeps its files to itself: Android in app-private storage, iOS in `Documents/sessions/`, web in IndexedDB.
+- [ ] **Export a session to a `.rez` file** (share or download). The format is the same in all three versions, but each keeps its files to itself: Android in app-private storage, iOS in `Documents/sessions/`, web in IndexedDB.
 
 ## Done everywhere
 

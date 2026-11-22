@@ -84,13 +84,13 @@ async function store(mode, fn) {
 
 const two = (n) => String(n).padStart(2, '0');
 
-/** Saves `s`; returns its name. */
-export async function save(s) {
+/** Saves `s`; returns its name. `label` (an imported file's name) is shown instead of the date. */
+export async function save(s, label) {
   const now = new Date();
   const name = `${now.getFullYear()}-${two(now.getMonth() + 1)}-${two(now.getDate())}_` +
     `${two(now.getHours())}-${two(now.getMinutes())}-${two(now.getSeconds())}`;
   const data = await encode(s);
-  await store('readwrite', (st) => st.put({ name, time: now.getTime(), data }));
+  await store('readwrite', (st) => st.put({ name, time: now.getTime(), data, label }));
   return name;
 }
 
@@ -107,7 +107,7 @@ export async function list() {
       const t = new Date(rec.time);
       out.push({
         name: rec.name,
-        title: `${two(t.getDate())}.${two(t.getMonth() + 1)} ${two(t.getHours())}:${two(t.getMinutes())}`,
+        title: rec.label || `${two(t.getDate())}.${two(t.getMonth() + 1)} ${two(t.getHours())}:${two(t.getMinutes())}`,
         summary: `${bars} ${bars === 1 ? 'bar' : 'bars'} · ♩ ${s.bpm} · ${used}`,
         session: s,
       });

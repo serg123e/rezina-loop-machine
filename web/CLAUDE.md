@@ -51,6 +51,8 @@ gh workflow run web.yml --ref <branch>
   - Pixel constants are Android's on a 1080 px wide screen, scaled by `px()`.
   - On a desktop the app is a portrait column in the middle.
 - **`sessions.js`** (Sessions.kt): the `.rez` bytes, format v2 with the context's sample rate (gzip via `CompressionStream`, big-endian `DataView`), stored in IndexedDB `rezina/sessions` under Android's file names.
+- **Import.** The Open… list starts with "＋ Import .rez file…". The file picker opens from the `click` after that tap: a user gesture on iOS too. The file input has no `accept`, because iOS greys out an extension it does not know. An imported file is saved under its own name (`label`), then opened.
+- **`?session=demo`** opens `sessions/demo.rez` on the first tap: the sound lab's "Всё вместе" phrase (Growl, 808, Pluck; 4 bars at 100 bpm). It is not added to the list. `node tools/make-demo-session.mjs` rebuilds it from `docs/sound-lab.html`; rebuild after changing the page's phrase. Other files in `sessions/` open the same way by name (`[a-z0-9-]`).
 
 ## Browser specifics
 

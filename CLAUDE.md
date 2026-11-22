@@ -173,3 +173,4 @@ The README screenshots come from the emulator: AVD `Phone_API_36`, unlocked with
 - `BandView.kt`: touches → band shape → `tension`/`bend`; the looper panel; drawing.
 - `tools/aab`, `tools/play`, `tools/play_api.py`: the Google Play bundle and Play Developer API (a copy of Skeeto's helpers).
 - `MainActivity.kt`: the accelerometer. A low-pass filter splits its signal into tilt (gravity) and shake.
+- `tools/make-demo-session.mjs`: builds the web demo loop (`web/sessions/demo.rez`, `?session=demo`) from the sound lab page's phrase.
