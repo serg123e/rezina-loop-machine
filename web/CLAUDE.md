@@ -71,12 +71,12 @@ gh workflow run web.yml --ref <branch>
   - Check new canvas or storage APIs against iOS 15 before using them.
 - **Playwright WebKit** screenshots at device scale 2 show the canvas at twice its size. That is the harness, not the page: the sizes are right, and Chromium and real iPhones look fine.
 - **`?debug=1`** adds a readout line `lat base+out+block=total ms [@rate] cpu N% max M`.
-  - Latency: the browser's `baseLatency` and `outputLatency` plus our 4 ms block. Headless Chromium reports a fake ~100 ms output, so only real devices count. `?` means the browser does not say (iOS 15 Safari has no `outputLatency`). `@44100` follows when the context does not run at 48 kHz.
+  - Latency: the browser's `baseLatency` and `outputLatency` plus our 4 ms block. Headless Chromium reports a fake ~100 ms output, so only real devices count. `?` means the browser does not say (iOS 15 Safari has no `outputLatency`). `@48k` is the context's sample rate.
   - `cpu`: the audio thread's busy time over the last second, as a share of real time (worklet.js `cpu`, measured with `Date.now()`, the only clock there). A desktop shows ~7 % for one Growl note.
   - `max`: the longest single render call that second, in whole ms. A 128-sample call has 2.7 ms at 48 kHz; spikes past that crackle even when `cpu` is low.
 - **`?test=sound`** runs the `npm test` sound check (`soundcheck.js`, shared with `test/soundcheck.mjs`) on the phone's main thread and lists the rows, FAIL in red. It needs no tap. It also counts jumps through the whole `Engine` (0 in Node). A FAIL on a phone where Node passes means that browser computes the synth differently.
 - **`?test=offline`** renders 4 s of a held Growl note with no deadline (`OfflineAudioContext`, the same worklet) and counts its jumps (samples that leap by more than 0.25; 0 on a desktop). Then, with the live synth disconnected, it plays three labelled 2 s stages: a plain browser sine, that note at ¼ level, that note at full level. A crackling sine blames the phone's browser output, not our code.
-- **Test switches for crackling phones** (with or without `debug`): `?rate=native` lets the device choose the sample rate (no resampling; frames then follow that rate). `?hint=balanced|playback|<seconds>` asks for a bigger output buffer than `interactive`.
+- **Test switches for crackling phones** (with or without `debug`): `?rate=native` lets the device choose the sample rate (no resampling; frames then follow that rate). `?hint=balanced|playback|<seconds>` asks for a bigger output buffer than `interactive`. `?reopen=1` opens the context, plays one sample, closes it and opens a new one: the old iOS Safari workaround for a first context at the wrong hardware rate.
 
 ## Differences from Android
 
@@ -88,8 +88,9 @@ gh workflow run web.yml --ref <branch>
 - CPU per voice is ~2.5–3.5 % of a desktop core (`synth.js` in Node), about 1.5× the Kotlin cost.
 - **Android Chrome:** plays fine; latency `3+24+4` ms.
 - **New iPhone Safari:** plays fine; latency `2.7+10.1+4.0` ms. Tilt and shake work after the `touchend` permission, so the iOS sign flip (`IOS_SIGNS`) is right.
-- **Old iPhone, iOS 15 Safari:** runs after the `roundPath` fix; latency `2.7+?+4.0`. **Every sound crackles, and it is not our code:**
+- **Old iPhone, iOS 15.8.7 Safari:** runs after the `roundPath` fix; latency `2.7+?+4.0`. **Every sound crackles, and it is not our code:**
   - `?test=sound` passes and the offline render has 0 jumps, so the samples are right.
   - Even the browser's own `OscillatorNode` sine crackles, also with `?rate=native&hint=playback`, in headphones too. Chrome there (also WebKit) crackles less often.
-  - So that phone's Web Audio output is broken, and the page cannot work around it. Only one such device has been seen, so there is no warning in the app. The native iOS app needs iOS 18, so it is no way out either.
+  - In Safari the clicks are regular, ~48 per second over the whole test: once per ~1024 samples, a hardware buffer. That is the sign of the old iOS bug where the context's rate does not match the hardware. Next: `?reopen=1`.
+  - Unless that helps, that phone's Web Audio output is broken, and the page cannot work around it. Only one such device has been seen, so there is no warning in the app. The native iOS app needs iOS 18, so it is no way out either.
 - Not checked: the silent switch, the wake lock, CPU on a mid-range Android with several tracks.

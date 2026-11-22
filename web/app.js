@@ -383,6 +383,18 @@ async function start() {
   } catch {
     audio = new AudioContext({ latencyHint: 'interactive' });
   }
+  if (q.get('reopen') === '1') {
+    // Test for old iOS Safari, which can open its first context at a rate the hardware does not run at
+    // and then clicks at every hardware buffer (~48 per second): play a one-sample buffer to settle the
+    // audio session, close, and open again.
+    const b = audio.createBuffer(1, 1, audio.sampleRate);
+    const s = audio.createBufferSource();
+    s.buffer = b;
+    s.connect(audio.destination);
+    s.start();
+    audio.close();
+    audio = new AudioContext(opts);
+  }
   audio.resume();
   dirty = true;
   try {
@@ -618,7 +630,7 @@ function latencyLine() {
   if (!audio) return 'audio: not started';
   const ms = (s) => (typeof s === 'number' ? (s * 1000).toFixed(1) : '?');
   const total = (audio.baseLatency || 0) + (audio.outputLatency || 0) + BLOCK / audio.sampleRate;
-  const rate = audio.sampleRate === 48000 ? '' : ` @${audio.sampleRate}`;
+  const rate = ` @${audio.sampleRate / 1000}k`;
   return `lat ${ms(audio.baseLatency)}+${ms(audio.outputLatency)}+${ms(BLOCK / audio.sampleRate)}=${ms(total)}${rate} cpu ${Math.round((st.cpu || 0) * 100)}% max ${st.peakMs || 0}`;
 }
 
