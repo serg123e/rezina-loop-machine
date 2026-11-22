@@ -15,6 +15,10 @@ The app is also a 4-track looper. Record a bass line, add drums over it, then a 
   <img src="docs/saved-loops.png" width="270" alt="List of saved loops">
 </p>
 
+## Play in the browser
+
+**[▶ 123automate.it/rezina-loop-machine](https://123automate.it/rezina-loop-machine/)**: open it on your phone, tap once to start, turn the sound on. You can add it to the home screen, and after the first visit it works offline. On a computer you play with the mouse; without motion sensors there is no tilt and shake.
+
 ## Download
 
 **[⬇ rezina-loop-machine.apk](https://github.com/serg123e/rezina-loop-machine/releases/latest/download/rezina-loop-machine.apk)**: Android 8.0 or newer.
