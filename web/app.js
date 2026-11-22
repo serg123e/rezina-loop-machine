@@ -88,8 +88,6 @@ const cells = [rect(), rect(), rect(), rect()];
 const recButton = rect(), modeButton = rect(), saveButton = rect(), openButton = rect();
 const slowerButton = rect(), tempoButton = rect(), fasterButton = rect(), progress = rect();
 let panelBottom = 0;
-/** Below the text readout; the note grid is clipped to start here. */
-let gridTop = 0;
 const listTop = () => panelBottom + px(110);
 const contains = (r, x, y) => x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h;
 const setRect = (r, x, y, x2, y2) => Object.assign(r, { x, y, w: x2 - x, h: y2 - y });
@@ -476,12 +474,27 @@ function draw() {
   ctx.fillRect(0, 0, W, H);
   drawPanel();
   drawNoteGrid();
+  drawReadout();
   const c = peg();
   circle(c.x, c.y, px(18), 'gray');
   drawGhosts();
   for (const p of fingers.values()) circle(p.x, p.y, px(90), rgb(255, 255, 255, 70));
   drawBand(band, tension, hot(tension));
 
+  if (browser) drawBrowser(browser);
+  drawToast();
+  if (!audio) drawStart();
+  else if (window.innerWidth > window.innerHeight && matchMedia('(pointer: coarse)').matches) drawUpright();
+}
+
+/** Under the readout: its line count is fixed (3, or 4 with ?debug=1). */
+const plate = () => {
+  const lines = DEBUG ? 4 : 3;
+  return { x: px(12), y: panelBottom + px(10), w: W - px(24), h: px(50) + (lines - 1) * px(46) + px(26) };
+};
+
+/** The sound and the sensors, as text over the note grid. */
+function drawReadout() {
   const mode = MODES[st.tracks[st.selected].mode];
   let sound;
   if (!gate) sound = '—';
@@ -495,15 +508,11 @@ function draw() {
     `stretch ${tension.toFixed(2).padStart(4)}  bend ${bend.toFixed(2).padStart(4)}`,
     `tilt ↔ ${clamp(tiltX + aimNow, -1, 1).toFixed(2).padStart(5)}  ↕ ${tiltY.toFixed(2).padStart(4)}  shake ${shake.toFixed(2).padStart(4)}`,
   ];
-  if (DEBUG) lines.push(latencyLine());
+  if (DEBUG) lines.push(latencyLine()); // plate() counts these lines
+  // a see-through plate: the note rings stay visible behind the text
+  roundRect(plate(), rgb(16, 16, 22, 150));
   font(36, MONO);
   lines.forEach((s, i) => text(s, px(24), panelBottom + px(50) + i * px(46), 'lightgray'));
-  gridTop = panelBottom + px(50) + lines.length * px(46);
-
-  if (browser) drawBrowser(browser);
-  drawToast();
-  if (!audio) drawStart();
-  else if (window.innerWidth > window.innerHeight && matchMedia('(pointer: coarse)').matches) drawUpright();
 }
 
 /**
@@ -531,7 +540,7 @@ function drawNoteGrid() {
   const c = peg();
   ctx.save();
   ctx.beginPath();
-  ctx.rect(0, gridTop, W, H - gridTop);
+  ctx.rect(0, panelBottom, W, H - panelBottom);
   ctx.clip();
   font(30);
   if (mode.drums) {
@@ -570,6 +579,8 @@ function labelRing(s, r, color) {
   const dx = c.x - px(LABEL_X);
   const y = r > dx ? c.y - Math.sqrt(r * r - dx * dx) : c.y;
   const x = r > dx ? px(LABEL_X) : c.x - r + px(8);
+  const p = plate();
+  if (y - px(8) < p.y + p.h + px(30)) return; // the ring shows through the readout, its name would collide
   text(s, x, y - px(8), color);
 }
 

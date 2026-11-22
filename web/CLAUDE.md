@@ -61,6 +61,10 @@ gh workflow run web.yml --ref <branch>
 - **Drawing.** It redraws only while something moves, plus one frame after, as on iOS.
 - **`?debug=1`** adds a readout line `latency base+out+block = total ms`: the browser's `baseLatency` and `outputLatency` plus our 4 ms block. Use it to measure a phone. Headless Chromium reports a fake ~100 ms output, so only real devices count.
 
+## Differences from Android
+
+- The text readout (sound, stretch, tilt) sits on a see-through plate, and the note grid runs under it up to the panel. Android starts the grid below the text. Ring names that would fall under the plate are not drawn (`plate()`, `labelRing`).
+
 ## Not tested
 
 - Checked in headless Chromium and WebKit on Linux: touch, mouse, record, loop, save, reload, open, no console errors.
